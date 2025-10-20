@@ -1,0 +1,20 @@
+# equity_prices_checks.yml
+# 목적: 주가 데이터 품질 검증 (Data Lake 단계 - 최소 검증)
+# DuckDB 데이터 소스 기준
+
+checks for equity_prices:
+
+  # 1️⃣ 기본 행 수 확인 (데이터가 아예 없지는 않은지)
+  - row_count > 0
+
+  # 2️⃣ 필수 컬럼 존재 확인 (NULL이 아닌지만 확인)
+  - missing_count(code) = 0
+  - missing_count(date) = 0
+
+  # 3️⃣ 중복 데이터 검증 (같은 종목코드+날짜 조합이 중복되지 않는지)
+  - duplicate_count(code, date) = 0
+
+  # 4️⃣ 거래량 음수값 존재 여부
+  - failed rows:
+      name: Negative Volume Check
+      fail condition: volume < 0

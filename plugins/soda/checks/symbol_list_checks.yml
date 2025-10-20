@@ -1,0 +1,15 @@
+checks for symbol_list:
+  # ✅ 1. 데이터 존재 확인
+  - row_count > 0
+
+  # ✅ 2. 필수 컬럼 결측치 검증
+  - missing_count(Code) = 0
+  - missing_count(Exchange) = 0
+  - missing_count(Country) = 0
+  - missing_count(Currency) = 0
+
+  # ✅ 3. 중복 여부 검증
+  - duplicate_count(Code) = 0
+
+  # ✅ 4. 행 수 sanity check
+  - row_count between 10 and 100000

@@ -1,0 +1,31 @@
+# Airflow 관련
+airflow.cfg
+unittests.cfg
+
+# Airflow 기본 폴더 (Airflow 설정에 따라 달라질 수 있음)
+/logs/
+/dags_folder/
+/plugins_folder/
+/webserver_config.py
+/metastore.db # SQLite를 사용한다면
+
+# 파이썬 및 IDE 관련
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.vscode/ # VS Code 설정
+.idea/   # IntelliJ/PyCharm 설정
+venv/    # 가상 환경 폴더
+.env     # 환경 변수 파일 (민감 정보 포함 가능)
+/dist
+/build
+
+# 운영체제 관련
+.DS_Store
+Thumbs.db
+
+*.log
+.idea/*
+*.json

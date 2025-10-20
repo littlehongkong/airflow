@@ -1,0 +1,20 @@
+checks for exchange_holiday:
+  # 1️⃣ 데이터 존재
+  - row_count > 0
+
+  # 2️⃣ 필수 필드 누락 검증
+  - missing_count(Name) = 0
+  - missing_count(Code) = 0
+  - missing_count(Country) = 0
+  - missing_count(Currency) = 0
+
+  # 3️⃣ ExchangeHolidays 필드 존재 검증 (JSON 키 전체)
+  - missing_count(ExchangeHolidays) = 0
+
+  # 4️⃣ ExchangeHolidays 내부 Date 결측 여부 (flatten 이후 처리 가정)
+  #    → S3나 DuckDB에서 이미 JSON을 파싱해 flatten된 테이블로 저장되어야 함.
+  #    (예: exchange_holidays_flat 테이블에 Holiday, Date 컬럼 존재)
+  #    Soda Core는 nested object 내부 접근 불가.
+  #    따라서 테이블을 flatten했다면 아래처럼 추가 가능:
+  # - missing_count(Date) = 0
+  # - duplicate_count(Date) = 0
