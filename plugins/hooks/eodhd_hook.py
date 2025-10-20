@@ -29,6 +29,14 @@ class EODHDHook(HttpHook):
         self.log.info(f"Requesting: {endpoint} | params={params}")
 
         response = self.run(endpoint=endpoint, headers=headers, data=params)
+
+        text = response.text.strip()
+
+        # ✅ 정상: 빈 리스트 ([])
+        if text in ("[]", ""):
+            self.log.info(f"✅ Empty response. Returning [].")
+            return []
+
         response.raise_for_status()
         return response.json()
 

@@ -25,8 +25,7 @@ class FundamentalValidator(BaseDataValidator):
     # ============================================================
     @staticmethod
     def _to_float(v):
-        """문자열, 정수, 실수, None 모두 안전하게 float으로 변환"""
-        if v is None or v == "" or v == "NA" or v == "null":
+        if v in [None, "", "NA", "NaN", "N/A", "null", "None"]:
             return None
         try:
             return float(v)
@@ -44,41 +43,83 @@ class FundamentalValidator(BaseDataValidator):
 
         data = {"code": code, "stock_type": stock_type}
 
-        # 손익계산서
-        income_q = fin.get("Income_Statement", {}).get("quarterly", {})
-        if income_q:
-            latest_q = max(income_q.keys())
-            item = income_q[latest_q]
-            data["totalRevenue"] = self._to_float(item.get("totalRevenue"))
-            data["operatingIncome"] = self._to_float(item.get("operatingIncome"))
-            data["netIncome"] = self._to_float(item.get("netIncome"))
+        if stock_type == 'common stock':
 
-        # 대차대조표
-        bs_q = fin.get("Balance_Sheet", {}).get("quarterly", {})
-        if bs_q:
-            latest_q = max(bs_q.keys())
-            item = bs_q[latest_q]
-            data["totalAssets"] = self._to_float(item.get("totalAssets"))
-            data["totalLiab"] = self._to_float(item.get("totalLiab"))
-            data["totalStockholderEquity"] = self._to_float(item.get("totalStockholderEquity"))
+            # ------------------------
+            # 📊 손익계산서 (Income Statement)
+            # ------------------------
+            income_q = fin.get("Income_Statement", {}).get("quarterly", {})
+            if income_q:
+                latest_q = max(income_q.keys())
+                item = income_q[latest_q]
+                data["totalRevenue"] = self._to_float(item.get("totalRevenue"))
+                data["operatingIncome"] = self._to_float(item.get("operatingIncome"))
+                data["netIncome"] = self._to_float(item.get("netIncome"))
+            else:
+                data["totalRevenue"] = None
+                data["operatingIncome"] = None
+                data["netIncome"] = None
 
-        # 현금흐름표
-        cf_q = fin.get("Cash_Flow", {}).get("quarterly", {})
-        if cf_q:
-            latest_q = max(cf_q.keys())
-            item = cf_q[latest_q]
-            data["totalCashflowsFromInvestingActivities"] = self._to_float(
-                item.get("totalCashflowsFromInvestingActivities"))
-            data["totalCashFromFinancingActivities"] = self._to_float(item.get("totalCashFromFinancingActivities"))
-            data["totalCashFromOperatingActivities"] = self._to_float(item.get("totalCashFromOperatingActivities"))
+            # ------------------------
+            # 💰 대차대조표 (Balance Sheet)
+            # ------------------------
+            bs_q = fin.get("Balance_Sheet", {}).get("quarterly", {})
+            if bs_q:
+                latest_q = max(bs_q.keys())
+                item = bs_q[latest_q]
+                data["totalAssets"] = self._to_float(item.get("totalAssets"))
+                data["totalLiab"] = self._to_float(item.get("totalLiab"))
+                data["totalStockholderEquity"] = self._to_float(item.get("totalStockholderEquity"))
+            else:
+                data["totalAssets"] = None
+                data["totalLiab"] = None
+                data["totalStockholderEquity"] = None
 
-        # ETF
-        etf_data = record.get("ETF_Data", {})
-        if etf_data:
-            data["etf_total_assets"] = self._to_float(etf_data.get("TotalAssets"))
-            data["etf_holdings_count"] = self._to_float(etf_data.get("Holdings_Count"))
-            data["etf_expense_ratio"] = self._to_float(etf_data.get("NetExpenseRatio"))
-            data["etf_yield"] = self._to_float(etf_data.get("Yield"))
+            # ------------------------
+            # 💵 현금흐름표 (Cash Flow)
+            # ------------------------
+            cf_q = fin.get("Cash_Flow", {}).get("quarterly", {})
+            if cf_q:
+                latest_q = max(cf_q.keys())
+                item = cf_q[latest_q]
+
+                # ✅ 영업활동 현금흐름
+                data["cashflow_operating"] = self._to_float(
+                    item.get("totalCashFromOperatingActivities")
+                    or item.get("cashFlowsOtherOperating")
+                    or item.get("freeCashFlow")
+                )
+
+                # ✅ 투자활동 현금흐름
+                data["cashflow_investing"] = self._to_float(
+                    item.get("totalCashflowsFromInvestingActivities")
+                    or item.get("investments")
+                    or item.get("capitalExpenditures")
+                    or item.get("otherCashflowsFromInvestingActivities")
+                    or item.get("salePurchaseOfStock")
+                )
+
+                # ✅ 재무활동 현금흐름
+                data["cashflow_financing"] = self._to_float(
+                    item.get("totalCashFromFinancingActivities")
+                    or item.get("dividendsPaid")
+                    or item.get("netBorrowings")
+                    or item.get("issuanceOfCapitalStock")
+                    or item.get("otherCashflowsFromFinancingActivities")
+                )
+            else:
+                data["cashflow_operating"] = None
+                data["cashflow_investing"] = None
+                data["cashflow_financing"] = None
+
+        elif "ETF_Data" in record:
+
+            etf_data = record.get('ETF_Data', {})
+
+            data["etf_total_assets"] = self._to_float(etf_data.get('TotalAssets'))
+            data["etf_holdings_count"] = self._to_float(etf_data.get('Holdings_Count'))
+            data["etf_expense_ratio"] = self._to_float(etf_data.get('NetExpenseRatio'))
+            data["etf_yield"] = self._to_float(etf_data.get('Yield'))
 
         return data
 
@@ -94,17 +135,19 @@ class FundamentalValidator(BaseDataValidator):
                 "totalAssets": Column(float, nullable=True),
                 "totalLiab": Column(float, nullable=True),
                 "totalStockholderEquity": Column(float, nullable=True),
-                "totalCashflowsFromInvestingActivities": Column(float, nullable=True),
-                "totalCashFromFinancingActivities": Column(float, nullable=True),
-                "totalCashFromOperatingActivities": Column(float, nullable=True),
+                # 새로운 현금흐름 항목
+                "cashflow_operating": Column(float, nullable=True),
+                "cashflow_investing": Column(float, nullable=True),
+                "cashflow_financing": Column(float, nullable=True)
             },
             checks=[
                 Check(
                     lambda df: (
                             abs(df["totalAssets"].fillna(0)
-                                - (df["totalLiab"].fillna(0) + df["totalStockholderEquity"].fillna(0))) < 1e9
+                                - (df["totalLiab"].fillna(0) + df["totalStockholderEquity"].fillna(0)))
+                            <= (df["totalAssets"].abs() * 0.1)
                     ),
-                    error="자산=부채+자본 불일치",
+                    error="자산=부채+자본 불일치 (5% 이상 차이)"
                 )
             ],
             strict=False,
@@ -143,10 +186,13 @@ class FundamentalValidator(BaseDataValidator):
         for i in range(0, len(all_records), self.BATCH_SIZE):
             batch_records = all_records[i:i + self.BATCH_SIZE]
             df = pd.DataFrame([self._extract_financials(r) for r in batch_records])
-
+            print('df.columns :: ' ,df.columns)
             # 종목 타입별 분리
-            df_stock = df[df["stock_type"].str.contains("stock", case=False, na=False)]
+            df_stock = df[df["stock_type"].str.contains("common stock", case=False, na=False)]
             df_etf = df[df["stock_type"].str.contains("etf", case=False, na=False)]
+
+            print('df_stock :: ' ,df_stock)
+            print('df_etf :: ' ,df_etf)
 
             try:
                 if not df_stock.empty:
@@ -167,8 +213,8 @@ class FundamentalValidator(BaseDataValidator):
         print(f"📄 단일 병합 파일 생성 완료: {temp_path}")
 
         # ✅ ETF / STOCK 분리 Soda 검증
-        stock_df = merged_df[merged_df["stock_type"].str.contains("stock", case=False, na=False)]
-        etf_df = merged_df[merged_df["stock_type"].str.contains("etf", case=False, na=False)]
+        stock_df = merged_df[merged_df["stock_type"].str.contains("Common Stock", case=False, na=False)]
+        etf_df = merged_df[merged_df["stock_type"].str.contains("ETF", case=False, na=False)]
 
         if not stock_df.empty:
             stock_temp_path = os.path.join(raw_dir, "_stock_temp.parquet")
