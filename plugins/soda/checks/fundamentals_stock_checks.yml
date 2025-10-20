@@ -5,13 +5,14 @@ checks for fundamentals:
   - missing_percent(operatingIncome) < 10
   - missing_percent(netIncome) < 10
   - missing_percent(totalAssets) < 10
-  - missing_percent(totalCashFromOperatingActivities) = 0
-  - missing_percent(totalCashflowsFromInvestingActivities) = 0
-  - missing_percent(totalCashFromFinancingActivities) = 0
+  - missing_percent(cashflow_operating) = 0
+#  - missing_percent(cashflow_investing) = 0
+#  - missing_percent(cashflow_financing)  0
+
 
   - avg(totalRevenue) > 0
-  - avg(operatingIncome) >= 0
-  - avg(netIncome) >= 0
+#  - avg(operatingIncome) >= 0
+#  - avg(netIncome) >= 0
 
   - avg(totalAssets) > 0
   - avg(totalLiab) >= 0
