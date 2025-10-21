@@ -1,6 +1,6 @@
 from airflow.providers.http.hooks.http import HttpHook
 from typing import Any, Dict, List
-
+from datetime import datetime, timedelta
 
 class EODHDHook(HttpHook):
     """
@@ -38,6 +38,10 @@ class EODHDHook(HttpHook):
             return []
 
         response.raise_for_status()
+
+        if isinstance(response.json(), list):
+            print("API 호출결과 row 건수 :", len(response.json()))
+
         return response.json()
 
     # ------------------------------
@@ -61,19 +65,33 @@ class EODHDHook(HttpHook):
         endpoint = f"api/fundamentals/{symbol}"
         return self._run_api(endpoint)
 
-    # ------------------------------
-    # 배당금 (심볼 단위)
-    # ------------------------------
-    def get_dividends(self, symbol: str) -> List[Dict[str, Any]]:
-        endpoint = f"api/div/{symbol}"
-        return self._run_api(endpoint)
+    # -------------------------------------------
+    # ✅ 신규 메서드 ①: Splits (액면분할)
+    # -------------------------------------------
+    def get_splits(self, exchange_code: str = None, trd_dt: str = None):
+        endpoint = f"api/eod-bulk-last-day/{exchange_code}"
 
-    # ------------------------------
-    # 액면분할 (심볼 단위)
-    # ------------------------------
-    def get_splits(self, symbol: str) -> List[Dict[str, Any]]:
-        endpoint = f"api/splits/{symbol}"
-        return self._run_api(endpoint)
+        params = {
+            "type": "splits",
+            "date": trd_dt
+        }
+
+        self.log.info(f"Fetching splits for {exchange_code}")
+        return self._run_api(endpoint, params=params)
+
+    # -------------------------------------------
+    # ✅ 신규 메서드 ②: Dividends (배당)
+    # -------------------------------------------
+    def get_dividends(self, exchange_code: str = None, trd_dt: str = None):
+        endpoint = f"api/eod-bulk-last-day/{exchange_code}"
+
+        params = {
+            "type": "dividends",
+            "date": trd_dt
+        }
+
+        self.log.info(f"Fetching dividends for {exchange_code}")
+        return self._run_api(endpoint, params=params)
 
 
     # ------------------------------

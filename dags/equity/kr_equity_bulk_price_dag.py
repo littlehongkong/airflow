@@ -6,6 +6,8 @@ from pendulum import timezone
 from plugins.operators.pipeline_operator import PipelineOperator
 from plugins.pipelines.equity_price_pipeline import EquityPricePipeline
 from plugins.validators.equity_price_validator import EquityPriceValidator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+
 
 KST = timezone("Asia/Seoul")
 
@@ -58,4 +60,17 @@ with DAG(
             },
         )
 
-        fetch_and_load >> validate_data
+        # 3️⃣ Corporate Actions DAG 트리거 (거래소 코드 전달)
+        trigger_corporate_actions = TriggerDagRunOperator(
+            task_id=f"{exchange_code}_trigger_corporate_actions",
+            trigger_dag_id="corporate_actions_dag",
+            conf={
+                "exchange_code": exchange_code,
+                "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+                "triggered_by": "{{ dag.dag_id }}",
+            },
+            wait_for_completion=False,  # 비동기 실행
+            poke_interval=30,
+        )
+
+        fetch_and_load >> validate_data >> trigger_corporate_actions

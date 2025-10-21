@@ -1,0 +1,80 @@
+# plugins/soda/checks/dividends_checks.yml
+checks for dividends:
+  # 기본 데이터 존재 및 필수 컬럼 검증
+  - row_count > 0
+  - missing_percent(code) = 0
+  - missing_percent(exchange) = 0
+  - missing_percent(date) = 0
+  - missing_percent(dividend) = 0
+  - missing_percent(currency) = 0
+  - duplicate_count(code, date) = 0
+
+  # code 포맷 검증
+  - failed rows:
+      name: invalid_code_empty_or_whitespace
+      samples limit: 5
+      fail condition: |
+        code IS NULL 
+        OR code = '' 
+        OR TRIM(code) = ''
+
+  # date 포맷 검증
+  - failed rows:
+      name: invalid_date_format
+      samples limit: 5
+      fail condition: NOT REGEXP_MATCHES(date, '^\d{4}-\d{2}-\d{2}$')
+
+  # dividend 금액 검증
+  - failed rows:
+      name: invalid_dividend_amount
+      samples limit: 5
+      fail condition: |
+        NOT REGEXP_MATCHES(dividend, '^\d+(\.\d+)?$')
+        OR CAST(dividend AS DOUBLE) <= 0
+
+  # currency 코드 검증
+  - failed rows:
+      name: invalid_currency_code
+      samples limit: 5
+      fail condition: |
+        NOT REGEXP_MATCHES(currency, '^[A-Z]{3}$')
+
+  # unadjustedValue 검증
+  - failed rows:
+      name: invalid_unadjusted_value
+      samples limit: 5
+      fail condition: |
+        unadjustedValue IS NOT NULL 
+        AND (NOT REGEXP_MATCHES(unadjustedValue, '^\d+(\.\d+)?$')
+             OR CAST(unadjustedValue AS DOUBLE) <= 0)
+
+
+  # 날짜 관계 검증: declarationDate < recordDate (DATE 캐스팅 추가)
+  - failed rows:
+      name: invalid_date_sequence
+      samples limit: 5
+      fail condition: |
+        declarationDate IS NOT NULL 
+        AND recordDate IS NOT NULL 
+        AND CAST(recordDate AS DATE) < CAST(declarationDate AS DATE)
+
+  # paymentDate는 recordDate 이후여야 함 (DATE 캐스팅 추가)
+  - failed rows:
+      name: payment_before_record
+      samples limit: 5
+      fail condition: |
+        recordDate IS NOT NULL 
+        AND paymentDate IS NOT NULL 
+        AND CAST(paymentDate AS DATE) < CAST(recordDate AS DATE)
+
+  # 날짜 범위 검증: 미래 날짜 체크 (DATE 캐스팅 추가)
+  - failed rows:
+      name: future_date_check
+      samples limit: 5
+      fail condition: CAST(date AS DATE) > CURRENT_DATE
+
+  # 날짜 범위 검증: 너무 오래된 데이터 (DATE 캐스팅 추가)
+  - failed rows:
+      name: too_old_date
+      samples limit: 5
+      fail condition: CAST(date AS DATE) < DATE '1900-01-01'

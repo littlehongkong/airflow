@@ -53,7 +53,8 @@ class SymbolChangeValidator(BaseDataValidator):
             raise AssertionError("Pandera 검증 실패")
 
         # 4️⃣ Soda 검증 (선택적)
-        self.soda_check_file = os.path.join("/opt/airflow/plugins/soda/checks", "symbol_change_checks.yml")
+        # todo 공통화코드로 처리부분 일괄적용 필요
+        self.soda_check_file = os.path.join("/opt/airflow/plugins/soda/checks", "symbol_changes_checks.yml")
         if os.path.exists(self.soda_check_file):
             self._run_soda(layer=self.layer)
         else:

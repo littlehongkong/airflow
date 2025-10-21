@@ -185,6 +185,3 @@ class BaseEquityPipeline(ABC):  # DataPipelineInterface 상속 유지 가정
 
     def load(self, records, **kwargs):
         raise NotImplementedError("하위 클래스에서 load()를 구현해야 합니다.")
-
-    def validate(self, **kwargs):
-        raise NotImplementedError("하위 클래스에서 validate()를 구현해야 합니다.")
