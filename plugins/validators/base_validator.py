@@ -26,11 +26,14 @@ class BaseDataValidator:
     schema: Optional[DataFrameSchema] = None
     soda_check_file: Optional[str] = None  # 예: "/opt/airflow/plugins/soda/checks/equity_price_checks.yml"
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, layer: str = "raw"):
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, layer: str = "raw", **kwargs):
         self.exchange_code = exchange_code
         self.trd_dt = trd_dt
         self.layer = layer
         self.data_domain=data_domain
+
+        # ✅ DAG에서 넘겨주는 추가 인자 처리
+        self.allow_empty = kwargs.get("allow_empty", False)
 
     # ----------------------------------------------------------------------
     # ✅ 1️⃣ Data Lake 경로 헬퍼
@@ -49,38 +52,6 @@ class BaseDataValidator:
         os.makedirs(base_path, exist_ok=True)
         return base_path
 
-    # ----------------------------------------------------------------------
-    # ✅ 2️⃣ 데이터 로드 (자동 파일 탐색)
-    # ----------------------------------------------------------------------
-    def _load_records(self, layer: Optional[str] = None) -> pd.DataFrame:
-        """JSONL, JSON, Parquet 자동 탐색 후 로드"""
-        target_dir = self._get_lake_path(layer)
-        files = [
-            f for f in os.listdir(target_dir)
-            if f.endswith((".jsonl", ".parquet", ".json"))
-        ]
-
-        if not files:
-            raise AssertionError(f"⚠️ 검증 대상 파일이 없습니다: {target_dir}")
-
-        file_path = os.path.join(target_dir, files[0])
-        print(f"📂 로드 파일: {file_path}")
-
-        if file_path.endswith(".jsonl"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = [json.loads(line) for line in f if line.strip()]
-        elif file_path.endswith(".json"):
-            # 티커별 JSON일 경우 여러 개를 병합
-            data = []
-            for f_name in files:
-                with open(os.path.join(target_dir, f_name), "r", encoding="utf-8") as f:
-                    data.append(json.load(f))
-        elif file_path.endswith(".parquet"):
-            return pd.read_parquet(file_path)
-        else:
-            raise ValueError(f"지원하지 않는 파일 형식: {file_path}")
-
-        return pd.DataFrame(data)
 
     # ----------------------------------------------------------------------
     # ✅ 3️⃣ Pandera 검증
@@ -98,13 +69,13 @@ class BaseDataValidator:
     # ----------------------------------------------------------------------
     # ✅ 4️⃣ Soda 검증
     # ----------------------------------------------------------------------
-    def _run_soda(self, layer: str = "raw", dag_run_id: str = None, task_id: str = None) -> Dict:
+    def _run_soda(self, layer: str = "raw", dag_run_id: str = None, task_id: str = None, allow_empty: bool = False) -> Dict:
         """Soda Core 검증만 수행하고 결과 반환"""
 
         self.soda_check_file = self._get_soda_check_path()
         if not self.soda_check_file or not os.path.exists(self.soda_check_file):
             print("⚠️ Soda 검증을 건너뜁니다 (체크파일 없음).")
-            return None
+            return {"status": "skipped", "reason": "no_check_file"}
 
         # ✅ _get_lake_path()가 이미 파티션 경로까지 포함하므로 파일명만 추가
         raw_dataset_path = os.path.join(
@@ -112,8 +83,46 @@ class BaseDataValidator:
             f"{self.data_domain}.jsonl"
         )
 
+        # ✅ 데이터 파일 존재 확인
         if not os.path.exists(raw_dataset_path):
-            raise FileNotFoundError(f"⚠️ 검증 대상 파일이 없습니다: {raw_dataset_path}")
+            msg = f"⚠️ 검증 대상 파일이 없습니다: {raw_dataset_path}"
+            if allow_empty:
+                print(msg + " → allow_empty=True, skip 처리")
+                return {"status": "skipped", "reason": "no_data_file"}
+            raise FileNotFoundError(msg)
+
+
+        # ✅ 파일 크기 0인 경우
+        if os.path.getsize(raw_dataset_path) == 0:
+            msg = f"⚠️ 파일 비어 있음: {raw_dataset_path}"
+            if allow_empty:
+                print(msg + " → allow_empty=True, skip 처리")
+                return {"status": "skipped", "reason": "empty_file"}
+            raise ValueError(msg)
+
+
+        # ✅ JSONL 첫줄 검사
+        try:
+            with open(raw_dataset_path, "r") as f:
+                first_line = next(f, None)
+                if not first_line:
+                    msg = f"⚠️ 데이터 내용 없음: {raw_dataset_path}"
+                    if allow_empty:
+                        print(msg + " → allow_empty=True, skip 처리")
+                        return {"status": "skipped", "reason": "empty_content"}
+                    raise ValueError(msg)
+        except Exception as e:
+            if allow_empty:
+                print(f"⚠️ 파일 읽기 오류 ({e}) → skip 처리")
+                return {"status": "skipped", "reason": "read_error"}
+            raise
+
+        return self._execute_soda(raw_dataset_path, layer, dag_run_id, task_id)
+
+        # ----------------------------------------------------------------------
+        # ✅ Soda 검증 실행 (기존 로직 그대로 별도 함수로 분리)
+        # ----------------------------------------------------------------------
+    def _execute_soda(self, raw_dataset_path: str, layer: str, dag_run_id: str, task_id: str):
 
         tmp_config = {
             "data_source my_duckdb": {
@@ -161,7 +170,9 @@ class BaseDataValidator:
                     "failed": 0,
                     "warned": 0,
                     "errored": 0,
-                }
+                },
+                "final_status": "pending",
+                "log_file": None,
             }
 
             has_failures = False
@@ -274,24 +285,28 @@ class BaseDataValidator:
     # ----------------------------------------------------------------------
     # ✅ 5️⃣ 전체 실행
     # ----------------------------------------------------------------------
-    def run(self, context: Dict = None) -> None:
-        """실제 검증 로직 실행"""
+    def run(self, context: Dict = None, allow_empty: bool = False) -> None:
+        """검증 실행 (allow_empty 지원)"""
 
-        # Airflow context에서 DAG 실행 정보 추출
         dag_run_id = None
         task_id = None
 
         if context:
-            dag_run_id = context.get('dag_run').run_id if context.get('dag_run') else None
-            task_id = context.get('task_instance').task_id if context.get('task_instance') else None
+            dag_run_id = context.get("dag_run").run_id if context.get("dag_run") else None
+            task_id = context.get("task_instance").task_id if context.get("task_instance") else None
 
-        # 1. 검증 실행
-        validation_result = self._run_soda(layer="raw", dag_run_id=dag_run_id, task_id=task_id)
+        # ✅ allow_empty 전달
+        validation_result = self._run_soda(layer="raw", dag_run_id=dag_run_id, task_id=task_id, allow_empty=allow_empty)
 
         if not validation_result:
             return
 
-        # 2. 검증 통과 시 validated 계층으로 저장 (기존 코드 활용)
+        # ✅ skipped 상태면 저장 생략
+        if validation_result.get("status") == "skipped":
+            print(f"⚠️ [SKIP] {self.data_domain} 데이터 검증 스킵됨: {validation_result.get('reason')}")
+            return
+
+        # ✅ 검증 통과 → validated 저장
         self._save_to_validated(validation_result, dag_run_id, task_id)
 
     def _save_to_validated(self, validation_result: Dict, dag_run_id: str = None, task_id: str = None) -> None:

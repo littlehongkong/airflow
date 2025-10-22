@@ -53,6 +53,7 @@ with DAG(
                 "exchange_code": "{{ params.exchange_code }}",
                 "trd_dt": "{{ macros.ds_add(ds, -1) }}",
                 "data_domain": "{{ params.data_domain }}",
+                "allow_empty": True,
             },
             params={
                 "exchange_code": exchange_code,

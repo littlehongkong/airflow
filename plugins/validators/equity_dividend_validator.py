@@ -14,8 +14,8 @@ import numpy as np
 class EquityDividendValidator(BaseDataValidator):
     """거래소별 배당(Dividends) 데이터 검증 Validator"""
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str = "dividends"):
-        super().__init__(exchange_code, trd_dt, data_domain)
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str = "dividends", **kwargs):
+        super().__init__(exchange_code, trd_dt, data_domain, **kwargs)
         self.schema = self._get_schema()
 
     # ============================================================
@@ -139,69 +139,5 @@ class EquityDividendValidator(BaseDataValidator):
     # 2️⃣ 전체 검증 실행
     # ============================================================
     def validate(self, **kwargs):
-        raw_dir = self._get_lake_path("raw")
-        files = [f for f in os.listdir(raw_dir) if f.endswith(".json") or f.endswith(".jsonl")]
-        if not files:
-            print(f"⚠️ 검증 대상 JSON 파일이 없습니다: {raw_dir}")
-            return
-
-        all_records = []
-        for file in files:
-            path = os.path.join(raw_dir, file)
-            with open(path, "r", encoding="utf-8") as f:
-                try:
-                    if file.endswith(".jsonl"):
-                        all_records.extend([json.loads(line) for line in f if line.strip()])
-                    else:
-                        all_records.extend(json.load(f))
-                except Exception as e:
-                    print(f"❌ 파일 로드 실패: {file} | {e}")
-
-        df = pd.DataFrame(all_records)
-        if df.empty:
-            raise AssertionError("❌ 검증할 데이터가 없습니다.")
-
-        # ✅ Pandera 스키마 검증
-        try:
-            self.schema.validate(df, lazy=True)
-            print(f"✅ Pandera 검증 통과 ({len(df)} records)")
-        except pa.errors.SchemaErrors as e:
-            print(f"❌ Pandera 검증 실패:")
-            print(e.failure_cases)
-            raise AssertionError(f"❌ Pandera 검증 실패: {e}")
-
-        # ✅ Soda Core 검증 실행
-        temp_path = os.path.join(raw_dir, "_dividends_temp.parquet")
-        df.to_parquet(temp_path, index=False)
-        self._run_soda_on_parquet(temp_path, mode="dividends")
-
-    # ============================================================
-    # 3️⃣ Soda 실행 로직
-    # ============================================================
-    def _run_soda_on_parquet(self, parquet_path: str, mode: str = "dividends"):
-        base_dir = "/opt/airflow/plugins/soda/checks"
-        soda_check_file = os.path.join(base_dir, f"dividends_checks.yml")
-
-        if not os.path.exists(soda_check_file):
-            print(f"⚠️ {soda_check_file} 없음 — 건너뜀.")
-            return
-
-        tmp_config = {"data_source my_duckdb": {"type": "duckdb", "path": ":memory:"}}
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as tmp_file:
-            yaml.dump(tmp_config, tmp_file)
-            tmp_config_path = tmp_file.name
-
-        scan = Scan()
-        scan.set_data_source_name("my_duckdb")
-        scan.add_configuration_yaml_file(tmp_config_path)
-        scan.add_sodacl_yaml_files(soda_check_file)
-        scan._data_source_manager.get_data_source("my_duckdb").connection.execute(
-            f"CREATE TABLE dividends AS SELECT * FROM read_parquet('{parquet_path}')"
-        )
-
-        exit_code = scan.execute()
-        print(f"🧪 Soda Scan 완료 (exit_code={exit_code}, mode={mode})")
-        if exit_code != 0:
-            raise AssertionError(f"❌ Soda 검증 실패: exit_code={exit_code}, mode={mode}")
-
-        os.unlink(tmp_config_path)
+        allow_empty = kwargs.get("allow_empty", getattr(self, "allow_empty", False))
+        self.run(context=kwargs, allow_empty=allow_empty)

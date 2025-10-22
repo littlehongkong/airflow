@@ -5,10 +5,10 @@ from airflow.models import Variable
 
 from plugins.operators.pipeline_operator import PipelineOperator
 from plugins.pipelines.symbol_list_pipeline import SymbolListPipeline
-from plugins.pipelines.symbol_change_pipeline import SymbolChangePipeline
+from plugins.pipelines.symbol_changes_pipeline import SymbolChangePipeline
 from plugins.pipelines.exchange_holiday_pipeline import ExchangeHolidayPipeline
 from plugins.validators.symbol_list_validator import SymbolListValidator
-from plugins.validators.symbol_change_validator import SymbolChangeValidator
+from plugins.validators.symbol_changes_validator import SymbolChangeValidator
 from plugins.validators.exchange_holiday_validator import ExchangeHolidayValidator
 
 
@@ -61,6 +61,7 @@ with DAG(
             "exchange_code": "US",
             "trd_dt": "{{ ds }}",
             "data_domain": "symbol_changes",
+            "allow_empty": True
         },
     )
 
