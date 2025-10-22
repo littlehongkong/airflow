@@ -3,7 +3,7 @@ from datetime import datetime
 import traceback
 import json
 
-def run_and_log(func, postgres_conn_id, dag_id, task_id, **kwargs):
+def run_and_log(func, postgres_conn_id, dag_id, task_id, airflow_context=None, **kwargs):
     """
     공통 실행 및 로그 적재 유틸리티
     - func: 실행할 파이프라인 메서드 (fetch_and_load 등)
@@ -36,7 +36,7 @@ def run_and_log(func, postgres_conn_id, dag_id, task_id, **kwargs):
 
     try:
         # 실제 task 함수 실행
-        result = func(**op_kwargs) or {}
+        result = func(context=airflow_context, **op_kwargs)
 
         # ✅ 결과 정리: op_kwargs + 공통 필드만
         result_info = {
