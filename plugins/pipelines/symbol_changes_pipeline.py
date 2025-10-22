@@ -1,4 +1,4 @@
-# plugins/pipelines/symbol_change_pipeline.py
+# plugins/pipelines/symbol_changes_pipeline.py
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 

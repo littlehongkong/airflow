@@ -33,6 +33,8 @@
 airflow/
 ├── dags/
 │   └── equity/
+│       ├── corporate_actions_dag.py
+│       ├── exchange_metadata_dag.py
 │       ├── us_equity_bulk_price_dag.py
 │       ├── kr_equity_bulk_price_dag.py
 │       └── fundamental_dag.py
@@ -44,19 +46,41 @@ airflow/
 │   │   ├── base_equity_pipeline.py
 │   │   ├── equity_price_pipeline.py
 │   │   ├── symbol_list_pipeline.py
-│   │   └── fundamental_pipeline.py
+│   │   ├── exchange_holiday_pipeline.py        
+│   │   ├── fundamental_pipeline.py
+│   │   ├── equity_dividend_pipeline.py
+│   │   ├── symbol_changes_pipeline.py
+│   │   └── equity_split_pipeline.py           
+
 │   ├── validators/
 │   │   ├── base_validator.py
 │   │   ├── equity_price_validator.py
+│   │   ├── equity_dividend_validator.py
+│   │   ├── equity_split_validator.py
+│   │   ├── symbol_list_validator.py
+│   │   ├── exchange_holiday_validator.py
 │   │   ├── fundamental_validator.py
-│   │   └── symbol_list_validator.py
+│   │   ├── symbol_change_checks.py
+│   │   ├── symbol_list_checks.py       
+│   │   └── equity_split_validator.py          
 │   ├── operators/
 │   │   └── pipeline_operator.py
-│   └── utils/
-│       ├── interface.py
-│       ├── pipeline_helper.py
-│       └── logger.py
-│
+│   ├── utils/
+│   │   ├── interface.py
+│   │   ├── pipeline_helper.py
+│   │   └── symbol_loader.py
+│   │
+│   ├── soda/
+│   │   └── checks/
+│   │       ├── fundamentals_stock_checks.yml
+│   │       ├── equity_prices_checks.yml    
+│   │       ├── exchange_holiday_checks.yml    
+│   │       ├── fundamentals_etf_checks.yml    
+│   │       ├── fundamentals_stock_checks.yml    
+│   │       ├── symbol_change_checks.yml    
+│   │       ├── symbol_list_checks.yml    
+│   │       ├── dividends_checks.yml    
+│   │       └── splits_checks.yml       
 └── docker-compose.yaml
 ```
 

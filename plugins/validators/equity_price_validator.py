@@ -6,8 +6,8 @@ from plugins.validators.base_validator import BaseDataValidator
 
 class EquityPriceValidator(BaseDataValidator):
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str):
-        super().__init__(exchange_code, trd_dt, data_domain)
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, **kwargs):
+        super().__init__(exchange_code, trd_dt, data_domain, **kwargs)
         self.schema = self._get_schema()
 
     @staticmethod
@@ -59,5 +59,5 @@ class EquityPriceValidator(BaseDataValidator):
         )
 
     def validate(self, **kwargs):
-        """Airflow Task에서 호출되는 entrypoint"""
-        self.run()
+        allow_empty = kwargs.get("allow_empty", getattr(self, "allow_empty", False))
+        self.run(context=kwargs, allow_empty=allow_empty)

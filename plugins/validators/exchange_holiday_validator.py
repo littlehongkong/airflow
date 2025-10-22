@@ -14,8 +14,8 @@ class ExchangeHolidayValidator(BaseDataValidator):
     - 상위 필드: Name, Code, Country, Currency, Timezone
     """
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str = "exchange_holidays"):
-        super().__init__(exchange_code, trd_dt, data_domain)
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str = "exchange_holidays", **kwargs):
+        super().__init__(exchange_code, trd_dt, data_domain, **kwargs)
         self.schema = self._get_schema()
 
     # ------------------------------------------------------------------
@@ -64,32 +64,5 @@ class ExchangeHolidayValidator(BaseDataValidator):
     # ✅ 검증 실행 (Airflow DAG에서 호출)
     # ------------------------------------------------------------------
     def validate(self, **kwargs):
-        print(f"🚀 [EXCHANGE HOLIDAY] 검증 시작 ({self.exchange_code})")
-
-        # 1️⃣ 파일 로드 (raw 경로 기준)
-        target_dir = self._get_lake_path(layer=self.layer)
-        files = [f for f in os.listdir(target_dir) if f.endswith(".json") or f.endswith(".jsonl")]
-        if not files:
-            raise AssertionError(f"⚠️ 휴장일 데이터 파일이 없습니다: {target_dir}")
-
-        file_path = os.path.join(target_dir, files[0])
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        df = self._flatten_exchange_holidays(data)
-        print(f"✅ 데이터 변환 완료: {len(df):,}건")
-
-        # 2️⃣ Pandera 검증
-        try:
-            self.schema.validate(df, lazy=True)
-            print("✅ Pandera 검증 완료")
-        except pa.errors.SchemaErrors as err:
-            print("❌ Pandera 검증 실패 상세:")
-            print(err.failure_cases.head(10))
-            raise AssertionError("Pandera 검증 실패")
-
-        # 3️⃣ Soda 검증
-        self.soda_check_file = os.path.join("/opt/airflow/plugins/soda/checks", "exchange_holiday_checks.yml")
-        self._run_soda(layer=self.layer)
-
-        print(f"🎯 Exchange Holiday 검증 완료 ({self.exchange_code})\n")
+        allow_empty = kwargs.get("allow_empty", getattr(self, "allow_empty", False))
+        self.run(context=kwargs, allow_empty=allow_empty)

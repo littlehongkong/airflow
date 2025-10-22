@@ -1,4 +1,4 @@
-checks for symbol_change:
+checks for symbol_changes:
   - row_count > 0
   - missing_count(exchange) = 0
   - missing_count(old_symbol) = 0
