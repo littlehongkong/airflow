@@ -95,6 +95,16 @@ class EODHDHook(HttpHook):
 
 
     # ------------------------------
+    # 거래소 리스트
+    # ------------------------------
+    def get_exchange_list(self):
+        """거래소 코드 리스트"""
+        endpoint = f"api/exchanges-list"
+        self.log.info(f"Fetching exchange list")
+        return self._run_api(endpoint)
+
+
+    # ------------------------------
     # 심볼 리스트
     # ------------------------------
     def get_exchange_symbols(self, exchange_code: str):

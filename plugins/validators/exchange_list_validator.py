@@ -4,14 +4,12 @@ from pandera import Column, Check
 from plugins.validators.base_validator import BaseDataValidator
 
 
-
-class SymbolListValidator(BaseDataValidator):
+class ExchangeInfoValidator(BaseDataValidator):
     """
-    거래소별 Symbol List 검증기
-    - 구조: Code, Name, Country, Exchange, Currency, Type, Isin
+    거래소 List 검증기
     """
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str = "symbol_list", **kwargs):
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, **kwargs):
         super().__init__(exchange_code, trd_dt, data_domain, **kwargs)
         self.schema = self._get_schema()
 
@@ -22,15 +20,18 @@ class SymbolListValidator(BaseDataValidator):
     def _get_schema() -> pa.DataFrameSchema:
         return pa.DataFrameSchema(
             columns={
-                "Code": Column(str, nullable=False, checks=Check(lambda s: s.str.len() > 0)),
-                "Name": Column(str, nullable=False, checks=Check(lambda s: s.str.len() > 0)),
+                "Name": Column(str, nullable=False, checks=Check(lambda s: s.str.len() > 0, error="Empty Name")),
+                "Code": Column(str, nullable=False, checks=Check(lambda s: s.str.match(r"^[A-Z0-9]+$")), coerce=True),
+                "OperatingMIC": Column(str, nullable=True, coerce=True),
                 "Country": Column(str, nullable=False, checks=Check(lambda s: s.str.len() > 0)),
-                "Exchange": Column(str, nullable=False, checks=Check(lambda s: s.str.len() > 0)),
-                "Currency": Column(str, nullable=False, checks=Check(lambda s: s.str.len() == 3)),
-                "Type": Column(str, nullable=False),
-                "Isin": Column(str, nullable=True, checks=Check(lambda s: s.str.match(r"^[A-Za-z]{2}[0-9A-Za-z]{9}[0-9]$") | s.isna()))
+                "Currency": Column(str, nullable=True, checks=Check(lambda s: s.str.len().between(2, 6)), coerce=True),
+                "CountryISO2": Column(str, nullable=False, checks=Check(lambda s: s.str.match(r"^[A-Z]{2}$")),
+                                      coerce=True),
+                "CountryISO3": Column(str, nullable=False, checks=Check(lambda s: s.str.match(r"^[A-Z]{3}$")),
+                                      coerce=True),
             },
-            coerce=True
+            strict=False,
+            coerce=True,
         )
 
     # ------------------------------------------------------------------

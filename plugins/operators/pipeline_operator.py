@@ -58,5 +58,6 @@ class PipelineOperator(BaseOperator):
             postgres_conn_id=self.postgres_conn_id,
             dag_id=context['dag'].dag_id,
             task_id=self.task_id,
+            airflow_context=context,  # ✅ 추가
             **rendered_kwargs,  # ✅ 여기엔 사용자 정의 값만
         )

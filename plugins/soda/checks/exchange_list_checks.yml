@@ -1,0 +1,70 @@
+checks for exchange_list:
+  # ✅ 기본 데이터 존재 및 필수 컬럼 검증
+  - row_count > 0
+  - missing_percent(Name) = 0
+  - missing_percent(Code) = 0
+  - duplicate_count(Code) = 0
+
+  # ✅ Name 컬럼 검증
+  - failed rows:
+      name: invalid_name_empty_or_whitespace
+      samples limit: 5
+      fail condition: |
+        Name IS NULL OR Name = '' OR TRIM(Name) = ''
+
+  # ✅ Code 형식 검증 (대문자/숫자/짧은 문자열 허용)
+  - failed rows:
+      name: invalid_exchange_code_format
+      samples limit: 5
+      fail condition: |
+        Code IS NULL OR Code = '' OR NOT REGEXP_MATCHES(Code, '^[A-Z0-9]{1,10}$')
+
+  # ✅ Country 필드 검증 (Unknown 허용)
+  - failed rows:
+      name: invalid_country_value
+      samples limit: 5
+      fail condition: |
+        Country IS NULL
+        OR Country = ''
+        OR LOWER(Country) = 'null'
+        OR (LOWER(Country) != 'unknown' AND LENGTH(TRIM(Country)) < 2)
+
+  # ✅ ISO2 코드 검증 (빈 문자열/null/Unknown 허용)
+  - failed rows:
+      name: invalid_country_iso2
+      samples limit: 5
+      fail condition: |
+        CountryISO2 IS NOT NULL
+        AND CountryISO2 != ''
+        AND LOWER(CountryISO2) != 'unknown'
+        AND NOT REGEXP_MATCHES(CountryISO2, '^[A-Z]{2}$')
+
+  # ✅ ISO3 코드 검증 (빈 문자열/null/Unknown 허용)
+  - failed rows:
+      name: invalid_country_iso3
+      samples limit: 5
+      fail condition: |
+        CountryISO3 IS NOT NULL
+        AND CountryISO3 != ''
+        AND LOWER(CountryISO3) != 'unknown'
+        AND NOT REGEXP_MATCHES(CountryISO3, '^[A-Z]{3}$')
+
+  # ✅ Currency 코드 검증 (Unknown, 공백 허용)
+  - failed rows:
+      name: invalid_currency_code
+      samples limit: 5
+      fail condition: |
+        Currency IS NOT NULL
+        AND LOWER(TRIM(Currency)) NOT IN ('unknown', 'null', '')
+        AND NOT REGEXP_MATCHES(TRIM(Currency), '^[A-Z]{2,6}$')
+
+  # ✅ OperatingMIC 형식 검증 (null, 공백 허용)
+  - failed rows:
+      name: invalid_operating_mic_format
+      samples limit: 5
+      fail condition: |
+        OperatingMIC IS NOT NULL
+        AND NOT REGEXP_MATCHES(OperatingMIC, '^[A-Z, ]+$')
+
+  # ✅ 최소 거래소 개수 확보
+  - row_count >= 10

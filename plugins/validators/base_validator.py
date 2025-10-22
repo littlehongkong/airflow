@@ -285,29 +285,59 @@ class BaseDataValidator:
     # ----------------------------------------------------------------------
     # ✅ 5️⃣ 전체 실행
     # ----------------------------------------------------------------------
-    def run(self, context: Dict = None, allow_empty: bool = False) -> None:
-        """검증 실행 (allow_empty 지원)"""
+    def run(self, context: Dict = None, allow_empty: bool = False) -> Dict:
+        """Airflow DAG 내에서 실행되는 데이터 검증 실행"""
 
-        dag_run_id = None
-        task_id = None
+        # --- context 파싱 ---
+        airflow_ctx = context.get("context") if isinstance(context, dict) else None
+        dag_run_id = airflow_ctx.get("run_id")
+        task_id = getattr(airflow_ctx.get("task_instance"), "task_id", None)
+        print(f"📘 [Validator Context] dag_run_id={dag_run_id}, task_id={task_id}")
 
-        if context:
-            dag_run_id = context.get("dag_run").run_id if context.get("dag_run") else None
-            task_id = context.get("task_instance").task_id if context.get("task_instance") else None
-
-        # ✅ allow_empty 전달
-        validation_result = self._run_soda(layer="raw", dag_run_id=dag_run_id, task_id=task_id, allow_empty=allow_empty)
+        # --- 검증 실행 ---
+        validation_result = self._run_soda(
+            layer="raw",
+            dag_run_id=dag_run_id,
+            task_id=task_id,
+            allow_empty=allow_empty,
+        )
 
         if not validation_result:
-            return
+            print("⚠️ validation_result is None → skip 반환")
+            return {
+                "data_domain": self.data_domain,
+                "exchange_code": self.exchange_code,
+                "trd_dt": self.trd_dt,
+                "status": "skipped",
+                "record_count": 0,
+            }
 
-        # ✅ skipped 상태면 저장 생략
-        if validation_result.get("status") == "skipped":
-            print(f"⚠️ [SKIP] {self.data_domain} 데이터 검증 스킵됨: {validation_result.get('reason')}")
-            return
-
-        # ✅ 검증 통과 → validated 저장
+        # --- 검증 통과 시 validated 저장 ---
         self._save_to_validated(validation_result, dag_run_id, task_id)
+
+        # --- row_count 계산 ---
+        record_count = 0
+        try:
+            conn = duckdb.connect()
+            parquet_path = os.path.join(
+                self._get_lake_path("validated"),
+                f"{self.data_domain}.parquet"
+            )
+            result = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{parquet_path}')").fetchone()
+            record_count = result[0] if result else 0
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ Row count 계산 중 오류 발생: {e}")
+
+        # --- 공통 반환 구조 ---
+        return {
+            "data_domain": self.data_domain,
+            "exchange_code": self.exchange_code,
+            "trd_dt": self.trd_dt,
+            "status": validation_result.get("final_status", "success"),
+            "record_count": record_count,
+            "log_file": validation_result.get("log_file"),
+        }
 
     def _save_to_validated(self, validation_result: Dict, dag_run_id: str = None, task_id: str = None) -> None:
         """검증 통과 데이터를 validated 계층에 Parquet로 저장"""

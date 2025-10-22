@@ -140,4 +140,4 @@ class EquityDividendValidator(BaseDataValidator):
     # ============================================================
     def validate(self, **kwargs):
         allow_empty = kwargs.get("allow_empty", getattr(self, "allow_empty", False))
-        self.run(context=kwargs, allow_empty=allow_empty)
+        return self.run(context=kwargs, allow_empty=allow_empty)
