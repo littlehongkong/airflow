@@ -52,7 +52,6 @@ class BaseDataValidator:
         os.makedirs(base_path, exist_ok=True)
         return base_path
 
-
     # ----------------------------------------------------------------------
     # ✅ 3️⃣ Pandera 검증
     # ----------------------------------------------------------------------
@@ -288,13 +287,12 @@ class BaseDataValidator:
     def run(self, context: Dict = None, allow_empty: bool = False) -> Dict:
         """Airflow DAG 내에서 실행되는 데이터 검증 실행"""
 
-        # --- context 파싱 ---
-        airflow_ctx = context.get("context") if isinstance(context, dict) else None
+        airflow_ctx = context.get("context")
         dag_run_id = airflow_ctx.get("run_id")
         task_id = getattr(airflow_ctx.get("task_instance"), "task_id", None)
+
         print(f"📘 [Validator Context] dag_run_id={dag_run_id}, task_id={task_id}")
 
-        # --- 검증 실행 ---
         validation_result = self._run_soda(
             layer="raw",
             dag_run_id=dag_run_id,
@@ -302,17 +300,50 @@ class BaseDataValidator:
             allow_empty=allow_empty,
         )
 
-        if not validation_result:
-            print("⚠️ validation_result is None → skip 반환")
-            return {
-                "data_domain": self.data_domain,
-                "exchange_code": self.exchange_code,
-                "trd_dt": self.trd_dt,
+        # ✅ allow_empty=True 시에도 _last_validated.json은 항상 남긴다.
+        if not validation_result or validation_result.get("status") == "skipped":
+            print("⚠️ 데이터 없음 또는 skip 처리됨 — 빈 메타데이터 기록 중...")
+
+            # 빈 Parquet 파일도 함께 생성 (schema 유지)
+            validated_dir = self._get_lake_path("validated")
+            validated_parquet_path = os.path.join(validated_dir, f"{self.data_domain}.parquet")
+
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            empty_table = pa.Table.from_pandas(pd.DataFrame())
+            pq.write_table(empty_table, validated_parquet_path)
+
+            print(f"📦 Empty Validated 데이터 저장: {validated_parquet_path}")
+
+            # _last_validated.json 작성
+            last_validated_meta = {
+                "dataset": self.data_domain,
+                "last_validated_timestamp": datetime.now(timezone.utc).isoformat(),
+                "validation_log_file": None,
+                "source_file": None,
+                "validated_file": validated_parquet_path,
+                "dag_run_id": dag_run_id,
+                "task_id": task_id,
                 "status": "skipped",
+                "checks_summary": {
+                    "total_checks": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "warned": 0,
+                    "errored": 0
+                },
                 "record_count": 0,
+                "reason": validation_result.get("reason", "empty_file" if validation_result else "unknown")
             }
 
-        # --- 검증 통과 시 validated 저장 ---
+            last_validated_path = os.path.join(validated_dir, "_last_validated.json")
+            with open(last_validated_path, 'w', encoding='utf-8') as f:
+                json.dump(last_validated_meta, f, indent=2, ensure_ascii=False)
+
+            print(f"📋 Empty 메타데이터 저장: {last_validated_path}")
+            return last_validated_meta
+
+            # --- 검증 통과 시 validated 저장 ---
         self._save_to_validated(validation_result, dag_run_id, task_id)
 
         # --- row_count 계산 ---
