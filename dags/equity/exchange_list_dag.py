@@ -1,5 +1,6 @@
 from datetime import datetime
 from airflow import DAG
+from airflow.operators.empty import EmptyOperator
 
 from plugins.operators.pipeline_operator import PipelineOperator
 from plugins.pipelines.exchange_list_pipeline import ExchangeInfoPipeline
@@ -12,6 +13,8 @@ with DAG(
     catchup=False,
     tags=["EODHD", "metadata", "exchange_list"],
 ) as dag:
+
+    start_task = EmptyOperator(task_id="start_pipeline")
 
     fetch_exchange_list = PipelineOperator(
         task_id="fetch_exchange_list",
@@ -27,4 +30,6 @@ with DAG(
         op_kwargs={"data_domain": "exchange_list", "trd_dt": "{{ ds }}", 'exchange_code': 'ALL'},
     )
 
-    fetch_exchange_list >> validate_exchange_list
+    end_task = EmptyOperator(task_id="end_pipeline")
+
+    start_task >> fetch_exchange_list >> validate_exchange_list >> end_task

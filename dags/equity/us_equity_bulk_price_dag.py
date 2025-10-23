@@ -3,6 +3,8 @@ from datetime import datetime
 from plugins.operators.pipeline_operator import PipelineOperator
 from plugins.pipelines.equity_price_pipeline import EquityPricePipeline
 from plugins.validators.equity_price_validator import EquityPriceValidator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.operators.empty import EmptyOperator
 
 EXCHANGE_CODE = "US"
 DATA_DOMAIN = "equity_prices"
@@ -14,6 +16,8 @@ with DAG(
     catchup=False,
     tags=["EODHD", "Price", "Soda"],
 ) as dag:
+
+    start_task = EmptyOperator(task_id="start_pipeline")
 
     # 1️⃣ 데이터 수집 (raw)
     fetch_and_load = PipelineOperator(
@@ -48,4 +52,19 @@ with DAG(
         },
     )
 
-    fetch_and_load >> validate_data
+    # 3️⃣ Corporate Actions DAG 트리거 (거래소 코드 전달)
+    trigger_corporate_actions = TriggerDagRunOperator(
+        task_id=f"{EXCHANGE_CODE}_trigger_corporate_actions",
+        trigger_dag_id="corporate_actions_dag",
+        conf={
+            "exchange_code": EXCHANGE_CODE,
+            "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+            "triggered_by": "{{ dag.dag_id }}",
+        },
+        wait_for_completion=False,  # 비동기 실행
+        poke_interval=30,
+    )
+
+    end_task = EmptyOperator(task_id="end_pipeline")
+
+    start_task >> fetch_and_load >> validate_data >> trigger_corporate_actions >> end_task
