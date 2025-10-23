@@ -16,6 +16,11 @@ class EODHDHook(HttpHook):
         self.connection = self.get_connection(http_conn_id)
         self.api_token = self.connection.extra_dejson.get("api_token")
 
+        # ✅ Hook의 “현재 호출 맥락” 저장용
+        self.vendor = "EODHD"
+        self.endpoint = None
+        self.params = None
+
     def _run_api(self, endpoint: str, params: Dict[str, Any] = None) -> Any:
         """공통 API 실행 로직"""
         if not self.api_token:
@@ -27,6 +32,10 @@ class EODHDHook(HttpHook):
 
         headers = {"Accept": "application/json"}
         self.log.info(f"Requesting: {endpoint} | params={params}")
+
+        # ✅ 메타정보 저장
+        self.endpoint = endpoint
+        self.params = params
 
         response = self.run(endpoint=endpoint, headers=headers, data=params)
 

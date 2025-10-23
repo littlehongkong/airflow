@@ -381,6 +381,18 @@ class BaseDataValidator:
             f"{self.data_domain}.parquet"
         )
 
+        # ✅ 1️⃣ Raw 단계의 원천 메타파일 경로 탐색
+        raw_dir = os.path.dirname(raw_dataset_path)
+        source_meta_path = os.path.join(raw_dir, "_source_meta.json")
+        source_meta_data = None
+
+        if os.path.exists(source_meta_path):
+            try:
+                with open(source_meta_path, "r", encoding="utf-8") as f:
+                    source_meta_data = json.load(f)
+            except Exception as e:
+                print(f"⚠️ _source_meta.json 로드 실패: {e}")
+
         # ✅ JSONL → Parquet 변환 (DuckDB 사용)
         conn = duckdb.connect(':memory:')
         conn.execute(f"""
@@ -403,6 +415,13 @@ class BaseDataValidator:
             "status": validation_result["final_status"],
             "checks_summary": validation_result["summary"]
         }
+
+        # ✅ 4️⃣ source_meta 병합
+        if source_meta_data:
+            last_validated_meta["source_meta"] = source_meta_data
+            print("🔗 원천 메타데이터 병합 완료 (_source_meta.json → _last_validated.json)")
+        else:
+            print("⚠️ 원천 메타데이터 파일(_source_meta.json)이 없어 병합을 건너뜀")
 
         validated_dir = self._get_lake_path("validated")
         last_validated_path = os.path.join(validated_dir, "_last_validated.json")

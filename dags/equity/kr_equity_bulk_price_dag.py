@@ -9,10 +9,10 @@ from plugins.validators.equity_price_validator import EquityPriceValidator
 DATA_DOMAIN = "equity_prices"
 
 with DAG(
-    dag_id="kr_us_equity_price_pipeline",
+    dag_id="kr_equity_price_pipeline",
     description="Fetch, validate and trigger corporate actions for KRX & KOSDAQ prices",
     start_date=datetime(2025, 10, 1),
-    schedule="0 19 * * 1-5",  # KST 새벽 4시 실행 (UTC+0 19:00)
+    schedule="0 11 * * 1-5",  # KST 새벽 4시 실행 (UTC+0 19:00)
     catchup=False,
     max_active_runs=1,
     tags=["EODHD", "equity", "price"],
@@ -31,7 +31,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": "{{ params.exchange_code }}",
-                "trd_dt": "{{ macros.ds_add(ds, -1) }}",  # 전일 데이터 수집
+                "trd_dt": "{{ ds }}",
                 "data_domain": "{{ params.data_domain }}",
             },
             params={
@@ -47,7 +47,7 @@ with DAG(
             method_name="validate",
             op_kwargs={
                 "exchange_code": "{{ params.exchange_code }}",
-                "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+                "trd_dt": "{{ ds }}",
                 "data_domain": "{{ params.data_domain }}",
                 "allow_empty": True,
             },
@@ -63,7 +63,7 @@ with DAG(
             trigger_dag_id="corporate_actions_dag",
             conf={
                 "exchange_code": exchange_code,
-                "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+                "trd_dt": "{{ ds }}",
                 "triggered_by": "{{ dag.dag_id }}",
             },
             wait_for_completion=False,

@@ -14,24 +14,9 @@ class EquitySplitPipeline(BaseEquityPipeline):
         super().__init__(data_domain, exchange_code, trd_dt)
         self.hook = EODHDHook()
 
-    def fetch(self, exchange_code: str, trd_dt: str) -> List[Dict[str, Any]]:
-        data = self.hook.get_splits(exchange_code=exchange_code, trd_dt=trd_dt)
-        if isinstance(data, list):
-            return data
-        self.log.warning("⚠️ Split API 응답이 list 형식이 아닙니다.")
-        return []
-
-    def fetch_and_load(self, **kwargs):
-        exchange_code = kwargs.get("exchange_code")
-        trd_dt = kwargs.get("trd_dt")
-        result = self.fetch(exchange_code=exchange_code, trd_dt=trd_dt)
-        if not result:
-            self.log.info(f"ℹ️ {exchange_code} Split 데이터 없음 ({trd_dt})")
-            return {"record_count": 0}
-
-        load_info = self.load(result, exchange_code=exchange_code, trd_dt=trd_dt)
-        return self._enforce_record_count(load_info, records=result)
-
+    def fetch(self, **kwargs):
+        data = self.hook.get_splits(exchange_code=self.exchange_code, trd_dt=self.trd_dt)
+        return self._standardize_fetch_output(data)
 
     # ---------------------------------
     # 2️⃣ Load (DB Bulk Insert)
