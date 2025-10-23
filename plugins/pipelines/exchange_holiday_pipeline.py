@@ -17,16 +17,9 @@ class ExchangeHolidayPipeline(BaseEquityPipeline):
     # ------------------------------------------------------------------
     # 2️⃣ Fetch: EODHD API 호출
     # ------------------------------------------------------------------
-    def fetch(self, exchange_code: str, **kwargs) -> Dict:
-        """
-        거래소 휴장일 및 기본정보 조회 (단일 Dict 객체 반환)
-        """
-        # ... (API 호출 로직은 이전과 동일)
-        data = self.hook.get_exchange_holidays(exchange_code)
-        if not data:
-            raise ValueError(f"{exchange_code} 거래소의 휴장일 데이터가 없습니다.")
-
-        return data
+    def fetch(self, **kwargs):
+        data = self.hook.get_exchange_holidays(exchange_code=self.exchange_code)
+        return self._standardize_fetch_output(data)
 
     # ------------------------------------------------------------------
     # 3️⃣ Load: File Lake 적재 (개별 JSON)
@@ -54,51 +47,3 @@ class ExchangeHolidayPipeline(BaseEquityPipeline):
             base_metadata=base_metadata,
             file_name=file_name,
         )
-
-    # ------------------------------------------------------------------
-    # 4️⃣ Fetch + Load 통합
-    # ------------------------------------------------------------------
-    def fetch_and_load(self, **kwargs):
-        exchange_code = kwargs.get("exchange_code")
-        result = self.fetch(exchange_code=exchange_code)
-
-        if not result:
-            return {"exchange_code": exchange_code, "status": "empty"}
-
-        # ✅ 데이터 적재
-        load_info = self.load([result], exchange_code=exchange_code)
-        return self._enforce_record_count(load_info, records=[result])
-
-    def validate(self, records: List[Dict], **kwargs) -> bool:
-        """휴장일 데이터: 단일 레코드, 필수 필드 (Code, ExchangeHolidays) 검증"""
-        if not records or len(records) != 1:
-            raise ValueError(f"Holiday validation failed: Expected exactly 1 record, got {len(records)}.")
-
-        rec = records[0]
-        exchange_code = kwargs.get('exchange_code', 'N/A')
-
-        # 1. 필수 식별자 및 기본 정보 검증
-        if rec.get("Code") != exchange_code:
-            raise ValueError(f"Holiday validation failed: Expected Code '{exchange_code}', got '{rec.get('Code')}'.")
-
-        # 2. 휴장일 목록 검증 (Dict 형태)
-        holidays = rec.get("ExchangeHolidays")
-        if not holidays:
-            self.log.info(f"ℹ️ Exchange {exchange_code} reports no holidays.")
-            return True
-
-        if not isinstance(holidays, dict):
-            raise ValueError(
-                f"Holiday validation failed (Exchange {exchange_code}): 'ExchangeHolidays' is not a dictionary.")
-
-        # 3. 휴장일 개별 항목 구조 검증
-        sample_holiday = next(iter(holidays.values()), None)
-        if sample_holiday:
-            required_holiday_keys = ['Holiday', 'Date', 'Type']
-            for key in required_holiday_keys:
-                if sample_holiday.get(key) is None:
-                    raise ValueError(
-                        f"Holiday validation failed (Exchange {exchange_code}): Sample holiday missing key '{key}'.")
-
-        self.log.info(f"✅ Exchange Holiday validation passed for {exchange_code}.")
-        return True

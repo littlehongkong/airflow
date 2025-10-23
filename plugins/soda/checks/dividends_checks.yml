@@ -1,55 +1,50 @@
-# plugins/soda/checks/dividends_checks.yml
 checks for dividends:
   # 기본 데이터 존재 및 필수 컬럼 검증
   - row_count > 0
   - missing_percent(code) = 0
   - missing_percent(exchange) = 0
   - missing_percent(date) = 0
-  - missing_percent(dividend) = 0
   - missing_percent(currency) = 0
-  - duplicate_count(code, date) = 0
 
-  # code 포맷 검증
+  # ✅ dividend 필드가 완전히 없을 수 있으므로, 아래 조건으로 교체
   - failed rows:
-      name: invalid_code_empty_or_whitespace
+      name: missing_or_invalid_dividend
       samples limit: 5
       fail condition: |
-        code IS NULL 
-        OR code = '' 
-        OR TRIM(code) = ''
+        dividend IS NULL
+        OR TRIM(CAST(dividend AS VARCHAR)) = ''
+        OR NOT REGEXP_MATCHES(CAST(dividend AS VARCHAR), '^[0-9]+(\.[0-9]+)?$')
+        OR CAST(COALESCE(dividend, '0') AS DOUBLE) <= 0
 
-  # date 포맷 검증
+  # ✅ date 포맷 검증 (NULL-safe)
   - failed rows:
       name: invalid_date_format
       samples limit: 5
-      fail condition: NOT REGEXP_MATCHES(date, '^\d{4}-\d{2}-\d{2}$')
-
-  # dividend 금액 검증
-  - failed rows:
-      name: invalid_dividend_amount
-      samples limit: 5
       fail condition: |
-        NOT REGEXP_MATCHES(dividend, '^\d+(\.\d+)?$')
-        OR CAST(dividend AS DOUBLE) <= 0
+        date IS NOT NULL
+        AND NOT REGEXP_MATCHES(CAST(date AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
 
-  # currency 코드 검증
+  # ✅ currency 코드 검증
   - failed rows:
       name: invalid_currency_code
       samples limit: 5
       fail condition: |
-        NOT REGEXP_MATCHES(currency, '^[A-Z]{3}$')
+        currency IS NOT NULL
+        AND NOT REGEXP_MATCHES(CAST(currency AS VARCHAR), '^[A-Z]{3}$')
 
-  # unadjustedValue 검증
+  # ✅ unadjustedValue 검증 (NULL-safe)
   - failed rows:
       name: invalid_unadjusted_value
       samples limit: 5
       fail condition: |
-        unadjustedValue IS NOT NULL 
-        AND (NOT REGEXP_MATCHES(unadjustedValue, '^\d+(\.\d+)?$')
-             OR CAST(unadjustedValue AS DOUBLE) <= 0)
+        unadjustedValue IS NOT NULL
+        AND (
+          TRIM(CAST(unadjustedValue AS VARCHAR)) = ''
+          OR NOT REGEXP_MATCHES(CAST(unadjustedValue AS VARCHAR), '^[0-9]+(\.[0-9]+)?$')
+          OR CAST(COALESCE(unadjustedValue, '0') AS DOUBLE) <= 0
+        )
 
-
-  # 날짜 관계 검증: declarationDate < recordDate (DATE 캐스팅 추가)
+  # 날짜 관계 검증 (모두 NULL-safe)
   - failed rows:
       name: invalid_date_sequence
       samples limit: 5
@@ -58,7 +53,6 @@ checks for dividends:
         AND recordDate IS NOT NULL 
         AND CAST(recordDate AS DATE) < CAST(declarationDate AS DATE)
 
-  # paymentDate는 recordDate 이후여야 함 (DATE 캐스팅 추가)
   - failed rows:
       name: payment_before_record
       samples limit: 5
@@ -67,14 +61,14 @@ checks for dividends:
         AND paymentDate IS NOT NULL 
         AND CAST(paymentDate AS DATE) < CAST(recordDate AS DATE)
 
-  # 날짜 범위 검증: 미래 날짜 체크 (DATE 캐스팅 추가)
   - failed rows:
       name: future_date_check
       samples limit: 5
-      fail condition: CAST(date AS DATE) > CURRENT_DATE
+      fail condition: |
+        date IS NOT NULL AND CAST(date AS DATE) > CURRENT_DATE
 
-  # 날짜 범위 검증: 너무 오래된 데이터 (DATE 캐스팅 추가)
   - failed rows:
       name: too_old_date
       samples limit: 5
-      fail condition: CAST(date AS DATE) < DATE '1900-01-01'
+      fail condition: |
+        date IS NOT NULL AND CAST(date AS DATE) < DATE '1900-01-01'

@@ -6,13 +6,14 @@ from plugins.validators.equity_price_validator import EquityPriceValidator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.operators.empty import EmptyOperator
 
+
 EXCHANGE_CODE = "US"
 DATA_DOMAIN = "equity_prices"
 
 with DAG(
     dag_id="us_equity_price_pipeline",
     start_date=datetime(2025, 10, 14),
-    schedule="0 3 * * *",  # 매일 새벽 3시 (수집)
+    schedule="0 23 * * *",  # 매일 새벽 3시 (수집)
     catchup=False,
     tags=["EODHD", "Price", "Soda"],
 ) as dag:
@@ -26,7 +27,7 @@ with DAG(
         method_name="fetch_and_load",
         op_kwargs={
             "exchange_code": "{{ params.exchange_code }}",
-            "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+            "trd_dt": "{{ ds }}",
             "data_domain": "{{ params.data_domain }}",
         },
         params={
@@ -42,7 +43,7 @@ with DAG(
         method_name="validate",
         op_kwargs={
             "exchange_code": "{{ params.exchange_code }}",
-            "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+            "trd_dt": "{{ ds }}",
             "data_domain": "{{ params.data_domain }}",
             "allow_empty": True,
         },
@@ -58,7 +59,7 @@ with DAG(
         trigger_dag_id="corporate_actions_dag",
         conf={
             "exchange_code": EXCHANGE_CODE,
-            "trd_dt": "{{ macros.ds_add(ds, -1) }}",
+            "trd_dt": "{{ ds }}",
             "triggered_by": "{{ dag.dag_id }}",
         },
         wait_for_completion=False,  # 비동기 실행

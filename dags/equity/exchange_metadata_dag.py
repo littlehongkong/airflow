@@ -6,8 +6,6 @@ from datetime import datetime
 from plugins.operators.pipeline_operator import PipelineOperator
 from plugins.pipelines.symbol_list_pipeline import SymbolListPipeline
 from plugins.validators.symbol_list_validator import SymbolListValidator
-from plugins.pipelines.symbol_changes_pipeline import SymbolChangePipeline
-from plugins.validators.symbol_changes_validator import SymbolChangeValidator
 from plugins.pipelines.exchange_holiday_pipeline import ExchangeHolidayPipeline
 from plugins.validators.exchange_holiday_validator import ExchangeHolidayValidator
 
@@ -60,29 +58,6 @@ with DAG(
         start_task >> fetch_symbols >> validate_symbols
         symbol_validate_tasks.append(validate_symbols)
 
-    # ✅ 4️⃣ Symbol Change (미국 거래소만)
-    fetch_symbol_changes = PipelineOperator(
-        task_id="US_fetch_symbol_changes",
-        pipeline_cls=SymbolChangePipeline,
-        method_name="fetch_and_load",
-        op_kwargs={
-            "exchange_code": "US",
-            "data_domain": "symbol_changes",
-            "trd_dt": "{{ ds }}",
-        },
-    )
-
-    validate_symbol_changes = PipelineOperator(
-        task_id="US_validate_symbol_changes",
-        pipeline_cls=SymbolChangeValidator,
-        method_name="validate",
-        op_kwargs={
-            "exchange_code": "US",
-            "trd_dt": "{{ ds }}",
-            "data_domain": "symbol_changes",
-            "allow_empty": True,  # 변경 이력이 없을 수도 있음
-        },
-    )
 
     # ✅ 5️⃣ Exchange Holiday (미국 거래소만)
     fetch_holidays = PipelineOperator(
@@ -113,4 +88,4 @@ with DAG(
 
     # ✅ 7️⃣ DAG dependency 설정
     for validate_symbols in symbol_validate_tasks:
-        validate_symbols >> fetch_symbol_changes >> validate_symbol_changes >> fetch_holidays >> validate_holidays >> end_task
+        validate_symbols >> fetch_holidays >> validate_holidays >> end_task
