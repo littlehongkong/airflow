@@ -1,8 +1,7 @@
 import logging
 import json
-from abc import ABC, abstractmethod
+from abc import ABC
 from pathlib import Path
-from datetime import datetime
 from typing import List, Dict, Any, Callable
 
 
@@ -84,13 +83,11 @@ class BaseEquityPipeline(HookMixin, ABC):  # DataPipelineInterface 상속 유지
             target_dir: Path,
             base_metadata: Dict[str, str],
             file_name: str | Callable[[List[Dict]], str],
-            is_multi_file: bool = False,
-            mode: str = "overwrite",  # ✅ append / overwrite 제어
+            mode: str = "overwrite",  # ✅ 기본: 덮어쓰기
     ) -> Dict[str, Any]:
         """
-        Data Lake에 데이터를 저장하는 공통 함수
-        - 일반: JSONL 단일 파일
-        - 펀더멘털: 티커별 JSON
+        Data Lake에 데이터를 저장하는 공통 함수 (단일 JSONL 버전)
+        - 모든 데이터유형 공통: 1개 JSONL 파일에 저장
         - mode:
             - "overwrite": 기존 파일 교체 (기본)
             - "append": 기존 파일 뒤에 추가
@@ -102,40 +99,15 @@ class BaseEquityPipeline(HookMixin, ABC):  # DataPipelineInterface 상속 유지
         target_dir.mkdir(parents=True, exist_ok=True)
         saved_count = 0
 
-        # ✅ Case 1: multi-file 저장
-        if is_multi_file:
-            for rec in records:
-                try:
-                    ticker = (
-                            rec.get("General", {}).get("Code")
-                            or rec.get("code")
-                            or rec.get("ticker")
-                    )
-                    if not ticker:
-                        raise ValueError("⚠️ Ticker 정보를 찾을 수 없습니다.")
-
-                    rec["metadata"] = base_metadata.copy()
-                    file_path = target_dir / f"{ticker}.json"
-
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        json.dump(rec, f, indent=4, ensure_ascii=False)
-
-                    saved_count += 1
-                except Exception as e:
-                    self.log.warning(f"⚠️ 개별 JSON 저장 실패: {str(e)}")
-
-            self.log.info(f"✅ {saved_count:,}개 티커별 JSON 파일 저장 완료 ({target_dir})")
-            return {"count": saved_count, "target_path": str(target_dir)}
-
-        # ✅ Case 2: JSONL 저장
+        # 파일 경로 결정
         file_path = target_dir / (
             file_name if isinstance(file_name, str) else file_name(records)
         )
 
+        # 모드 설정
         open_mode = "a" if mode == "append" else "w"
 
         try:
-
             with open(file_path, open_mode, encoding="utf-8") as f:
                 for rec in records:
                     rec["metadata"] = base_metadata.copy()
@@ -146,6 +118,7 @@ class BaseEquityPipeline(HookMixin, ABC):  # DataPipelineInterface 상속 유지
                 f"✅ JSONL 파일 저장 완료: {file_path} "
                 f"({saved_count:,}건, mode={mode})"
             )
+
         except Exception as e:
             self.log.error(f"❌ JSONL 저장 실패: {str(e)}")
             raise

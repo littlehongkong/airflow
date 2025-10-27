@@ -1,126 +1,138 @@
-from typing import List, Dict
-import gc
+# plugins/pipelines/fundamental_pipeline.py
+from typing import Any, Dict, List
+import math
 from plugins.hooks.eodhd_hook import EODHDHook
 from plugins.pipelines.base_equity_pipeline import BaseEquityPipeline
-from plugins.utils.symbol_loader import load_symbols_from_datalake_pd
+
 
 class FundamentalPipeline(BaseEquityPipeline):
     """
-    📊 EODHD Fundamentals 데이터 파이프라인
-    - 거래소별 종목 목록 기반 개별 종목 펀더멘털 수집
-    - 메모리 사용 최소화를 위해 Chunk 단위로 수집 및 파일 저장
+    펀더멘털(Fundamentals) 데이터 수집 및 적재 파이프라인
+    --------------------------------------------------------
+    ✅ 다른 파이프라인(ExchangeInfoPipeline 등)과 동일한 구조 유지
+    ✅ 단, 종목별 호출 및 배치 단위 저장(batch_0001.jsonl 등)만 차별화
     """
 
     def __init__(self, data_domain: str, exchange_code: str, trd_dt: str):
-        super().__init__(data_domain=data_domain, exchange_code=exchange_code, trd_dt=trd_dt)
+        super().__init__(data_domain, exchange_code, trd_dt)
         self.hook = EODHDHook()
+        self.batch_size = 40  # ✅ 배치 단위 저장 (40종목씩)
 
+    # ------------------------------------------------------------------
+    # ✅ 1️⃣ Fetch
+    # ------------------------------------------------------------------
+    def fetch(self, **kwargs):
+        tickers = kwargs.get("tickers", ['TSLA.US', 'AAPL.US', 'TMF.US', 'LABU.US'])
+        all_records = []
+        source_meta = None
 
-    # ---------------------------------
-    # 2️⃣ 단일 종목 수집
-    # ---------------------------------
-    def _fetch_single_fundamental(self, symbol: str) -> Dict:
-        """
-        개별 종목 Fundamentals 호출
-        """
-        try:
-            data = self.hook.get_fundamentals(symbol)
-            if data:
-                return data
-        except Exception as e:
-            self.log.warning(f"⚠️ {symbol} 수집 실패: {e}")
-        return {}
+        for ticker in tickers:
+            try:
+                data = self.hook.get_fundamentals(
+                    symbol=ticker
+                )
+                records, meta = self._standardize_fetch_output(data)  # ✅ 언패킹
+                all_records.extend(records)  # ✅ flatten list[dict]
+                source_meta = meta  # 마지막 메타만 기록 (혹은 병합 가능)
 
-    # ---------------------------------
-    # 3️⃣ Load (티커별 JSON 저장)
-    # ---------------------------------
+            except Exception as e:
+                self.log.error(f"❌ {ticker} 펀더멘털 수집 실패: {e}")
+                continue
+
+        self.log.info(f"✅ 펀더멘털 수집 완료: 총 {len(all_records)}건")
+        return all_records, source_meta
+
+    # ------------------------------------------------------------------
+    # ✅ 2️⃣ Load
+    # ------------------------------------------------------------------
     def load(self, records: List[Dict], **kwargs):
         """
-        펀더멘털 데이터를 티커 단위 JSON으로 저장
+        수집된 펀더멘털 데이터를 배치 단위로 JSON Lines로 적재합니다.
+        다른 파이프라인과 동일한 구조를 유지하며, 파일명만 batch_*.jsonl로 구분합니다.
         """
-        kwargs['partition_key_name'] = 'trd_dt'
-        kwargs['geo_partition_key'] = kwargs.get('geo_partition_key', 'exchange_code')
+
+        if not records:
+            self.log.warning("⚠️ 적재할 데이터가 없습니다.")
+            return
+
+        # 🔹 공통 메타데이터 및 저장 경로 확보
+        kwargs["partition_key_name"] = kwargs.get("partition_key_name", "trd_dt")
+        kwargs["geo_key_name"] = kwargs.get("geo_key_name", "exchange_code")
 
         target_dir, base_metadata = self._get_lake_path_and_metadata(**kwargs)
 
-        return self._write_records_to_lake(
-            records=records,
+        total_records = len(records)
+        total_batches = math.ceil(total_records / self.batch_size)
+
+        for i in range(total_batches):
+            batch_records = records[i * self.batch_size : (i + 1) * self.batch_size]
+            file_name = f"batch_{i + 1:04d}.jsonl"
+
+            self.log.info(f"{file_name} >> {batch_records}")
+
+            self._write_records_to_lake(
+                records=batch_records,
+                target_dir=target_dir,
+                base_metadata=base_metadata,
+                file_name=file_name,
+            )
+
+        meta = kwargs.get("meta", {}) or {}
+
+        # 🔹 _source_meta.json 저장
+        self._save_source_meta(
             target_dir=target_dir,
-            base_metadata=base_metadata,
-            file_name=lambda r: r.get("General", {}).get("Code", "unknown") + ".json",
-            is_multi_file=True,
+            record_count=total_records,
+            source_meta={**meta, "batches": total_batches}
         )
 
-    # ---------------------------------
-    # 4️⃣ Chunk 기반 Fetch + Load
-    # ---------------------------------
+        self.log.info(f"✅ 펀더멘털 데이터 {total_batches}개 배치 저장 완료 ({total_records}건)")
+
+    # ------------------------------------------------------------------
+    # ✅ 3️⃣ Fetch + Load 통합 실행
+    # ------------------------------------------------------------------
     def fetch_and_load(self, **kwargs):
-        exchange_code = kwargs.get("exchange_code")
-        trd_dt = kwargs.get("trd_dt")
+        """
+        전체 파이프라인 실행
+        - API 호출(fetch)
+        - 배치 단위 JSONL 저장(load)
+        """
 
-        # todo 추후 제거
-        exchange_sample_symbols = {
-            "US": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "LABU", 'TMF'],
-            "KO": ["005930", "000660", "035420", "068270", '069500'],
-            "KQ": ["196170", "247540", "277810", "091990"],
+        self.log.info(f"🚀 펀더멘털 수집 파이프라인 시작 ({self.exchange_code}, {self.trd_dt})")
+
+        try:
+            records, meta = self.fetch(**kwargs)
+            if not records:
+                return {
+                    "exchange_code": self.exchange_code,
+                    "data_domain": self.data_domain,
+                    "trd_dt": self.trd_dt,
+                    "status": "skipped",
+                    "record_count": 0,
+                }
+
+            kwargs["meta"] = meta
+            self.load(records, **kwargs)
+            status = "success"
+        except Exception as e:
+            self.log.error(f"❌ 펀더멘털 파이프라인 실패: {e}")
+            status = "failed"
+            records = []
+
+        return {
+            "exchange_code": self.exchange_code,
+            "data_domain": self.data_domain,
+            "trd_dt": self.trd_dt,
+            "status": status,
+            "record_count": len(records),
         }
-
-        df = load_symbols_from_datalake_pd(
-            exchange_code=exchange_code,
-            trd_dt=trd_dt,
-            filter_dict={"Code": exchange_sample_symbols[exchange_code]}
-        )
-
-        CHUNK_SIZE = 100
-        total_saved = 0
-
-        self.log.info(f"📦 {exchange_code} 거래소 종목 {len(df):,}건 수집 시작 (chunk={CHUNK_SIZE})")
-
-        symbols = df['Code'].tolist()
-
-        for i in range(0, len(symbols), CHUNK_SIZE):
-            batch = symbols[i:i + CHUNK_SIZE]
-            results = []
-
-            for sym in batch:
-                symbol = f"{sym}.{exchange_code}"
-                data = self._fetch_single_fundamental(symbol)
-                if data:
-                    results.append(data)
-
-            if results:
-                load_result = self.load(results, exchange_code=exchange_code, trd_dt=trd_dt)
-                saved_count = load_result.get("count", len(results))
-                total_saved += saved_count
-                self.log.info(f"💾 Chunk {i//CHUNK_SIZE + 1} 저장 완료 ({saved_count}건)")
-
-            del results
-            gc.collect()
-
-        self.log.info(f"✅ {exchange_code} 거래소 총 {total_saved:,}건 펀더멘털 수집 및 저장 완료")
-        return {"record_count": total_saved}
-
-    # ---------------------------------
-    # 5️⃣ Validate (필수 섹션 검증)
-    # ---------------------------------
-    def validate(self, **kwargs) -> bool:
-        """
-        저장된 펀더멘털 파일의 필수 구조 검증
-        """
-        records = self._read_records_from_lake(**kwargs)
-
-        if not records:
-            raise ValueError(f"No fundamental files found for {kwargs.get('exchange_code')}")
-
-        required_sections = ['General', 'Highlights', 'Financials']
-        for i, rec in enumerate(records):
-            for section in required_sections:
-                if section not in rec or not isinstance(rec.get(section), (dict, list)):
-                    raise ValueError(f"Missing or invalid section '{section}' in record {i}")
-
-            code = rec.get("General", {}).get("Code")
-            if not code:
-                raise ValueError(f"Invalid ticker code in record {i}")
-
-        self.log.info(f"✅ Fundamental validation passed for {len(records)} tickers.")
-        return True
+        #
+        #
+        # records, meta = self.fetch(**kwargs)
+        # if not records:
+        #     self.log.warning("⚠️ 수집된 데이터가 없습니다. 적재를 건너뜁니다.")
+        #     return
+        #
+        # kwargs['meta'] = meta
+        # self.load(records, **kwargs)
+        self.log.info(f"🎯 펀더멘털 파이프라인 완료 ({self.exchange_code}, {self.trd_dt})")

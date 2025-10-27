@@ -22,7 +22,8 @@ with DAG(
     start_task = EmptyOperator(task_id="start_pipeline")
 
     # ✅ 2️⃣ 거래소별 수집 및 검증 태스크
-    for exchange_code in EXCHANGES:
+    #for exchange_code in EXCHANGES:
+    for exchange_code in ['US']:
 
         # 🟦 Fetch fundamentals
         fetch_fundamentals = PipelineOperator(
@@ -32,7 +33,7 @@ with DAG(
             op_kwargs={
                 "exchange_code": exchange_code,
                 "data_domain": "fundamentals",
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ ds }}"
             },
         )
 
