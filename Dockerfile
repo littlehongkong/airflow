@@ -8,8 +8,10 @@ FROM apache/airflow:${AIRFLOW_VERSION}-python3.11
 # 데이터 소스에 맞는 soda-core-xxx 패키지를 설치합니다.
 USER airflow
 RUN pip install --no-cache-dir \
+    pandas \
     pandera \
-    soda-core
+    soda-core-duckdb \
+    duckdb==1.0.0
 
 # 필요한 경우, Airflow 사용자(airflow)에게 권한을 다시 위임합니다.
 USER airflow

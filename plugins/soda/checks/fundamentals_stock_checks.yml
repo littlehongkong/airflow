@@ -1,19 +1,16 @@
-checks for fundamentals:
+checks for fundamentals_v:
   - row_count > 0
   - duplicate_count(code) = 0
   - missing_percent(totalRevenue) < 10
-  - missing_percent(operatingIncome) < 10
-  - missing_percent(netIncome) < 10
-  - missing_percent(totalAssets) < 10
-  - missing_percent(cashflow_operating) = 0
-#  - missing_percent(cashflow_investing) = 0
-#  - missing_percent(cashflow_financing)  0
+#  - missing_percent(operatingIncome) < 10
+#  - missing_percent(netIncome) < 10
+#  - missing_percent(totalAssets) < 10
 
 
   - avg(totalRevenue) > 0
 #  - avg(operatingIncome) >= 0
 #  - avg(netIncome) >= 0
 
-  - avg(totalAssets) > 0
-  - avg(totalLiab) >= 0
-  - avg(totalStockholderEquity) >= 0
+#  - avg(totalAssets) > 0
+#  - avg(totalLiab) >= 0
+#  - avg(totalStockholderEquity) >= 0

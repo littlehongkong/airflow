@@ -1,4 +1,4 @@
-checks for fundamentals:
+checks for fundamentals_v:
   - row_count > 0
   - duplicate_count(code) = 0
   - missing_percent(etf_total_assets) < 5

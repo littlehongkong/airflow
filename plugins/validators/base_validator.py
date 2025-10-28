@@ -7,6 +7,7 @@ from soda.scan import Scan
 import tempfile
 import yaml
 import duckdb
+import logging
 from typing import Optional, Tuple, Any, Dict
 from pandera import DataFrameSchema
 from plugins.pipelines.base_equity_pipeline import LOCAL_DATA_LAKE_PATH
@@ -31,6 +32,7 @@ class BaseDataValidator:
         self.trd_dt = trd_dt
         self.layer = layer
         self.data_domain=data_domain
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # ✅ DAG에서 넘겨주는 추가 인자 처리
         self.allow_empty = kwargs.get("allow_empty", False)
@@ -443,3 +445,102 @@ class BaseDataValidator:
         assert os.path.exists(file_path), f"⚠️ Soda 체크파일이 존재하지 않습니다: {file_path}"
 
         return file_path
+
+
+
+    def _format_soda_result(
+        self,
+        scan,
+        layer: str,
+        dag_run_id: str,
+        task_id: str,
+        scan_start,
+        scan_end,
+        exit_code: int,
+    ):
+        """Soda Scan 결과를 표준 포맷(dict)으로 정리"""
+        has_failures = False
+        has_errors = False
+
+        summary = {
+            "total_checks": 0,
+            "passed": 0,
+            "failed": 0,
+            "warned": 0,
+            "errored": 0,
+        }
+        checks = []
+        errors = []
+
+        # ✅ 체크 결과 집계
+        if hasattr(scan, "_checks"):
+            for c in scan._checks:
+                summary["total_checks"] += 1
+                outcome_val = getattr(c, "outcome", "unknown")
+                outcome = outcome_val.value if hasattr(outcome_val, "value") else str(outcome_val)
+
+                if outcome == "pass":
+                    summary["passed"] += 1
+                elif outcome == "fail":
+                    summary["failed"] += 1
+                    has_failures = True
+                elif outcome == "warn":
+                    summary["warned"] += 1
+
+                checks.append({
+                    "name": getattr(c, "name", "unknown"),
+                    "outcome": outcome,
+                })
+
+        # ✅ 로그 오류 집계
+        if hasattr(scan, "_logs") and hasattr(scan._logs, "logs"):
+            for lg in scan._logs.logs:
+                if lg.level == "error":
+                    has_errors = True
+                    summary["errored"] += 1
+                    errors.append({"level": lg.level, "message": lg.message})
+
+        # ✅ 최종 상태 결정
+        final_status = "success"
+        if exit_code >= 2 or has_failures:
+            final_status = "failed"
+        elif exit_code == 3 or has_errors:
+            final_status = "error"
+        elif exit_code == 1:
+            final_status = "warning"
+
+        # ✅ 로그 파일 경로 생성
+        validated_base = os.path.join(LOCAL_DATA_LAKE_PATH, "data_lake", "validated")
+        log_dir = os.path.join(validated_base, "_metadata", "validation_logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        ts = scan_start.strftime("%Y%m%d_%H%M%S")
+        safe_run_id = (dag_run_id or "").replace(":", "-").replace("+", "_")
+        log_name = f"{self.data_domain}_{ts}_{safe_run_id}.json" if safe_run_id else f"{self.data_domain}_{ts}.json"
+        log_path = os.path.join(log_dir, log_name)
+
+        # ✅ 표준 반환 dict
+        result = {
+            "scan_metadata": {
+                "dataset": self.data_domain,
+                "layer": layer,
+                "scan_timestamp": scan_start.isoformat(),
+                "scan_duration_seconds": (scan_end - scan_start).total_seconds(),
+                "exit_code": exit_code,
+                "dag_run_id": dag_run_id,
+                "task_id": task_id,
+            },
+            "checks": checks,
+            "errors": errors,
+            "summary": summary,
+            "final_status": final_status,
+            "log_file": log_path,
+        }
+
+        # ✅ 로그 파일 저장
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+        print(f"📋 Soda 검증 로그 저장: {log_path}")
+
+        return result
