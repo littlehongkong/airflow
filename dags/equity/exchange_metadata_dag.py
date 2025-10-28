@@ -13,7 +13,7 @@ with DAG(
     dag_id="exchange_metadata_dag",
     description="Collect and validate exchange metadata: symbol list, symbol changes, holidays",
     start_date=datetime(2025, 10, 15),
-    schedule="0 19 * * 1-5",  # KST 새벽 4시 (UTC 19시)
+    schedule="0 19 * * 0-4",  # KST 새벽 4시 (UTC 19시)
     catchup=False,
     max_active_runs=1,
     tags=["EODHD", "metadata", "exchange"],

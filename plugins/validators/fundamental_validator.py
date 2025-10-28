@@ -1,6 +1,8 @@
 import os
 import json
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from datetime import datetime
 from plugins.validators.base_validator import BaseDataValidator
 
@@ -22,7 +24,17 @@ class FundamentalValidator(BaseDataValidator):
 
     # ----------------------------------------------------------------------
     def validate(self, **kwargs):
+        """
+        펀더멘털 배치 검증 실행
+        - 배치별 JSONL 파일을 순회하면서 검증 수행
+        - 각 배치별 검증 결과를 저장 후 최종 요약파일 생성
+        - 항상 dict 반환 (Airflow 로그 처리 호환)
+        """
+
         data_dir = self._get_lake_path("raw")
+        validated_dir = self._get_lake_path("validated")
+        os.makedirs(validated_dir, exist_ok=True)
+
         batch_files = sorted(
             f for f in os.listdir(data_dir)
             if f.startswith("batch_") and f.endswith(".jsonl")
@@ -31,90 +43,98 @@ class FundamentalValidator(BaseDataValidator):
         if not batch_files:
             msg = f"⚠️ 검증할 배치 파일이 없습니다: {data_dir}"
             self.log.warning(msg)
-            raise Exception(msg)
+            return {
+                "status": "skipped",
+                "exchange_code": self.exchange_code,
+                "trd_dt": self.trd_dt,
+                "data_domain": self.data_domain,
+                "record_count": 0,
+                "reason": "no_batch_files"
+            }
 
-        results = []
-        total_failed = 0
-        total_passed = 0
-        all_records = 0
+        all_results = []
+        total_passed, total_failed, total_records = 0, 0, 0
+        skipped_batches = []
 
+        for batch_file in batch_files:
+            batch_path = os.path.join(data_dir, batch_file)
+            self.log.info(f"🔍 배치 검증 시작: {batch_file}")
+
+            with open(batch_path, "r", encoding="utf-8") as f:
+                records = [json.loads(line) for line in f]
+
+            # 🔹 빈 배치 스킵 처리
+            if not records:
+                self.log.warning(f"⚠️ {batch_file} — 데이터 없음, 스킵 처리")
+                skipped_batches.append(batch_file)
+                continue
+
+            # 🔹 각 배치 검증 수행
+            batch_result = self._validate_records(records, batch_file)
+            all_results.append(batch_result)
+            total_records += batch_result["record_count"]
+
+            # 🔹 배치별 검증 결과 저장 (validated 경로)
+            batch_result_path = os.path.join(validated_dir, batch_file.replace(".jsonl", "_validation.json"))
+            with open(batch_result_path, "w", encoding="utf-8") as vf:
+                json.dump(batch_result, vf, indent=2, ensure_ascii=False)
+            self.log.info(f"📄 배치 검증 결과 저장: {batch_result_path}")
+
+            if batch_result["status"] == "success":
+                total_passed += 1
+            else:
+                total_failed += 1
+
+        # ------------------------------------------------------------------
+        # 🔹 요약 파일 저장 (validated 경로)
+        summary_path = os.path.join(validated_dir, "_validation_summary.json")
+        summary_data = {
+            "timestamp": datetime.now().isoformat(),
+            "exchange_code": self.exchange_code,
+            "trd_dt": self.trd_dt,
+            "status": "failed" if total_failed else "success",
+            "total_batches": len(batch_files),
+            "validated_batches": len(all_results),
+            "skipped_batches": skipped_batches,
+            "total_records": total_records,
+            "summary": {"passed": total_passed, "failed": total_failed, "skipped": len(skipped_batches)},
+            "batches": [
+                {"batch": r["batch"], "status": r["status"], "record_count": r["record_count"]}
+                for r in all_results
+            ],
+        }
+
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary_data, f, indent=2, ensure_ascii=False)
+        self.log.info(f"📋 검증 요약 저장: {summary_path}")
+
+        # ------------------------------------------------------------------
+        # 🔹 검증 완료된 데이터 Parquet 저장 (validated 계층)
         try:
-            for batch_file in batch_files:
-                batch_path = os.path.join(data_dir, batch_file)
-                self.log.info(f"🔍 배치 검증 시작: {batch_file}")
+            self._save_validated_output(all_results)
+        except Exception as e:
+            self.log.warning(f"⚠️ 검증 결과 저장 중 예외 발생: {e}")
 
-                with open(batch_path, "r", encoding="utf-8") as f:
-                    records = [json.loads(line) for line in f]
+        # ------------------------------------------------------------------
+        # 🔹 리턴 값 보장 (Airflow 후속 처리용)
+        final_status = "failed" if total_failed > 0 else "success"
+        result = {
+            "status": final_status,
+            "exchange_code": self.exchange_code,
+            "trd_dt": self.trd_dt,
+            "data_domain": self.data_domain,
+            "record_count": total_records,
+            "total_batches": len(batch_files),
+            "failed_batches": total_failed,
+            "skipped_batches": skipped_batches,
+        }
 
-                batch_result = self._validate_records(records, batch_file)
-                results.append(batch_result)
-                all_records += batch_result["record_count"]
+        if total_failed > 0:
+            self.log.error(f"❌ 펀더멘털 검증 실패 ({total_failed}/{len(batch_files)}개 배치)")
+            return result
 
-                if batch_result["status"] == "success":
-                    total_passed += 1
-                else:
-                    total_failed += 1
-
-                # 배치별 요약 로그
-                self.log.info(
-                    f"📊 {batch_file} 결과: {batch_result['status'].upper()} | "
-                    f"총 {batch_result['record_count']}건 | "
-                    f"에러 {len(batch_result['errors'])} | 경고 {len(batch_result['warnings'])}"
-                )
-                for rr in batch_result["record_results"]:
-                    self.log.info(
-                        f"   - {rr['code']} ▶ {rr['status'].upper()} "
-                        f"({len(rr.get('errors', []))} errors, {len(rr.get('warnings', []))} warnings)"
-                    )
-
-                    # 개별 경고 상세 로그
-                    for w in rr.get("warnings", []):
-                        self.log.warning(f"      ⚠️ {rr['code']} 경고 사유: {w}")
-
-                    # 개별 오류 상세 로그
-                    for e in rr.get("errors", []):
-                        self.log.error(f"      ❌ {rr['code']} 오류 사유: {e}")
-
-            final_status = "failed" if total_failed > 0 else "success"
-            self.log.info(
-                f"✅ 펀더멘털 전체 검증 완료 — 총 {len(batch_files)}개 배치, {all_records}건 "
-                f"(성공 {total_passed}, 실패 {total_failed})"
-            )
-
-            summary_path = os.path.join(data_dir, "_validation_summary.json")
-            with open(summary_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "timestamp": datetime.now().isoformat(),
-                        "exchange_code": self.exchange_code,
-                        "trd_dt": self.trd_dt,
-                        "status": final_status,
-                        "total_batches": len(batch_files),
-                        "total_records": all_records,
-                        "results": results,
-                    },
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            self.log.info(f"📋 검증 요약 저장: {summary_path}")
-
-            if final_status == "failed":
-                raise Exception(f"❌ 펀더멘털 검증 실패 ({total_failed}/{len(batch_files)}개 배치)")
-
-            return {"status": final_status, "batches": results}
-
-        finally:
-            deleted = 0
-            for f in os.listdir(data_dir):
-                if any(x in f for x in [".sample", ".parquet", "tmp_"]):
-                    try:
-                        os.remove(os.path.join(data_dir, f))
-                        deleted += 1
-                    except Exception:
-                        pass
-            if deleted:
-                self.log.info(f"🧹 임시파일 {deleted}개 정리 완료 ({data_dir})")
+        self.log.info(f"✅ 펀더멘털 검증 성공 — {total_passed}/{len(batch_files)}개 배치 통과, {len(skipped_batches)}개 스킵")
+        return result
 
     # ----------------------------------------------------------------------
     def _validate_records(self, records: list[dict], batch_name: str) -> dict:
@@ -135,13 +155,11 @@ class FundamentalValidator(BaseDataValidator):
                         rec_warnings.append(f"General.{field} 누락")
 
                 if sec_type in ["etf"]:
-                    # ✅ ETF 전용 검증 로직
                     etf_result = self._validate_etf_fields(rec)
                     rec_errors.extend(etf_result["errors"])
                     rec_warnings.extend(etf_result["warnings"])
 
                 elif sec_type in ["common stock"]:
-                    # ✅ 기존 Common Stock 검증 로직
                     fin = rec.get("Financials", {})
                     if not fin:
                         rec_errors.append("Financials 필드 없음")
@@ -186,31 +204,13 @@ class FundamentalValidator(BaseDataValidator):
         }
 
     # ----------------------------------------------------------------------
-    # ✅ ETF 전용 검증 로직 (Soda YAML 대응)
-    # ----------------------------------------------------------------------
     def _validate_etf_fields(self, rec: dict) -> dict:
-        """
-        Soda checks 대응:
-        - row_count > 0 → 자동 충족
-        - duplicate_count(code) = 0 → DAG 레벨에서 검증
-        - missing_percent(field) < 5 → 해당 필드 존재 여부만 확인
-        - avg(field) > 0 → 음수/0 여부 검증
-        """
         errors = []
         warnings = []
         general = rec.get("General", {})
-        code = general.get("Code", "UNKNOWN")
         data = rec.get("ETF_Data", {})
 
-        assert data != {}, 'data가 비어있습니다.'
-
-        required_fields = [
-            "TotalAssets",
-            "Holdings_Count",
-            "NetExpenseRatio",
-            "Yield",
-        ]
-
+        required_fields = ["TotalAssets", "Holdings_Count", "NetExpenseRatio", "Yield"]
         for f in required_fields:
             val = data.get(f)
             if val is None:
@@ -255,8 +255,6 @@ class FundamentalValidator(BaseDataValidator):
             keys = ["totalAssets", "totalLiab"]
         elif section == "Income_Statement":
             keys = ["netIncome", "totalRevenue"]
-        # elif section == "Cash_Flow":
-        #     keys = ["OperatingCashFlow", "FreeCashFlow"]
         else:
             keys = []
 
@@ -268,3 +266,79 @@ class FundamentalValidator(BaseDataValidator):
                 errors.append(f"{section}.{period}.{k} 비정상값 ({v})")
 
         return {"errors": errors, "warnings": warnings}
+
+    # ----------------------------------------------------------------------
+    def _save_validated_output(self, batch_results: list):
+        validated_dir = self._get_lake_path("validated")
+        os.makedirs(validated_dir, exist_ok=True)
+        validated_files = []
+
+        # ✅ 상태 집계용 변수
+        passed_batches = 0
+        warned_batches = 0
+        failed_batches = 0
+
+        for br in batch_results:
+            batch_name = os.path.splitext(br["batch"])[0]
+            batch_parquet = os.path.join(validated_dir, f"{batch_name}.parquet")
+
+            # 상태별 카운트
+            if br["status"] == "success":
+                passed_batches += 1
+            elif br["status"] == "warning":
+                warned_batches += 1
+            else:
+                failed_batches += 1
+
+            recs = []
+            for rr in br.get("record_results", []):
+                recs.append({
+                    "code": rr["code"],
+                    "type": rr.get("type"),
+                    "status": rr.get("status"),
+                    "error_count": len(rr.get("errors", [])),
+                    "warning_count": len(rr.get("warnings", [])),
+                })
+            if not recs:
+                self.log.warning(f"⚠️ {batch_name} 검증 데이터 없음, 저장 건너뜀.")
+                continue
+
+            df = pd.DataFrame(recs)
+            table = pa.Table.from_pandas(df)
+            pq.write_table(table, batch_parquet)
+            validated_files.append(batch_parquet)
+            self.log.info(f"📦 {batch_name}.parquet 저장 완료 ({len(df)}건)")
+
+        # ✅ 메타데이터 기록
+        meta = {
+            "dataset": self.data_domain,
+            "exchange_code": self.exchange_code,
+            "trd_dt": self.trd_dt,
+            "last_validated_timestamp": datetime.now().isoformat() + "+00:00",
+            "status": (
+                "failed" if failed_batches > 0
+                else "warning" if warned_batches > 0
+                else "success"
+            ),
+            "checks_summary": {
+                "total_batches": len(batch_results),
+                "passed": passed_batches,
+                "failed": failed_batches,
+                "warned": warned_batches
+            },
+            "validated_batches": [os.path.basename(f) for f in validated_files],
+            "record_total": sum([len(pd.read_parquet(f)) for f in validated_files]),
+            "validation_log_file": f"{self.data_domain}_{datetime.now():%Y%m%d_%H%M}_scheduled__{self.trd_dt}T00-00-00.json",
+            "source_file": str(self._get_lake_path('raw')),
+            "validated_dir": validated_dir,
+            "source_meta": {
+                "vendor": "EODHD",
+                "endpoint": "api/fundamentals",
+                "params": {"api_token": "***", "fmt": "json"},
+            }
+        }
+
+        meta_path = os.path.join(validated_dir, "_last_validated.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+        self.log.info(f"📋 메타 저장 완료: {meta_path}")
