@@ -1,5 +1,5 @@
 # plugins/pipelines/fundamental_pipeline.py
-from typing import Any, Dict, List
+from typing import Dict, List
 import math
 import json
 from pathlib import Path

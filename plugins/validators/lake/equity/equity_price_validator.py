@@ -1,5 +1,5 @@
 # plugins/validators/equity_price_validator.py
-import pandera as pa
+import pandera.pandas as pa
 from pandera import Column, Check
 from plugins.validators.base_validator import BaseDataValidator
 

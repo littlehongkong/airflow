@@ -1,6 +1,6 @@
 # plugins/utils/symbol_loader.py
 import pandas as pd
-from plugins.pipelines.base_equity_pipeline import LOCAL_DATA_LAKE_PATH
+from plugins.config.constants import DATA_LAKE_ROOT
 import logging
 
 log = logging.getLogger(__name__)
@@ -10,15 +10,16 @@ def load_symbols_from_datalake_pd(
     trd_dt: str,
     exclude_markets=None,
     filter_dict=None,
+    vendor=None,
 ) -> pd.DataFrame:
     """
     pandas 기반 심볼 로더 (빠르고 간결)
     """
     base_path = (
-        LOCAL_DATA_LAKE_PATH
-        / "data_lake"
+        DATA_LAKE_ROOT
         / "raw"
         / "symbol_list"
+        / f"vendor={vendor}"
         / f"exchange_code={exchange_code}"
         / f"trd_dt={trd_dt}"
         / "symbol_list.jsonl"

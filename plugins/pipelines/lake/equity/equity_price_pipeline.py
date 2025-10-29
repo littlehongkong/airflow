@@ -14,9 +14,7 @@ class EquityPricePipeline(BaseEquityPipeline):
         super().__init__(data_domain=data_domain, exchange_code=exchange_code, trd_dt=trd_dt)
         self.hook = EODHDHook()
 
-    # ---------------------------------
-    # 1️⃣ Fetch (API 호출)
-    # ---------------------------------
+
     def fetch(self, **kwargs):
         data = self.hook.get_prices(exchange_code=self.exchange_code, trd_dt=self.trd_dt)
         return self._standardize_fetch_output(data)

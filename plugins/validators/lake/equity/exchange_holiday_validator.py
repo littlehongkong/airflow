@@ -1,6 +1,4 @@
-import os
-import json
-import pandera as pa
+import pandera.pandas as pa
 from pandera import Column, Check
 import pandas as pd
 from plugins.validators.base_validator import BaseDataValidator

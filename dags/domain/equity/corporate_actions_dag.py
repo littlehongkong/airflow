@@ -6,13 +6,13 @@ from airflow.operators.empty import EmptyOperator
 from datetime import datetime
 
 from plugins.operators.pipeline_operator import PipelineOperator
-from plugins.pipelines.equity_split_pipeline import EquitySplitPipeline
-from plugins.pipelines.equity_dividend_pipeline import EquityDividendPipeline
-from plugins.validators.equity_split_validator import EquitySplitValidator
-from plugins.validators.equity_dividend_validator import EquityDividendValidator
-from plugins.pipelines.symbol_changes_pipeline import SymbolChangePipeline
-from plugins.validators.symbol_changes_validator import SymbolChangeValidator
-
+from plugins.pipelines.lake.equity.equity_split_pipeline import EquitySplitPipeline
+from plugins.pipelines.lake.equity.equity_dividend_pipeline import EquityDividendPipeline
+from plugins.validators.lake.equity.equity_split_validator import EquitySplitValidator
+from plugins.validators.lake.equity.equity_dividend_validator import EquityDividendValidator
+from plugins.pipelines.lake.equity.symbol_changes_pipeline import SymbolChangePipeline
+from plugins.validators.lake.equity.symbol_changes_validator import SymbolChangeValidator
+from plugins.config.constants import VENDORS, DATA_DOMAINS
 
 # -----------------------------------------------------------
 # ✅ BranchPythonOperator용 함수: 미국 거래소만 실행
@@ -21,12 +21,10 @@ def should_run_symbol_changes(**context):
     ex = context["dag_run"].conf.get("exchange_code")
     return "run_symbol_changes" if ex == "US" else "skip_symbol_changes"
 
-
 default_args = {
     "owner": "data_team",
     "depends_on_past": False,
 }
-
 
 # -----------------------------------------------------------
 # ✅ DAG 정의
@@ -55,7 +53,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": "splits",
+                "data_domain": DATA_DOMAINS["SPLITS"],
                 "trd_dt": trd_dt,
             },
         )
@@ -67,8 +65,9 @@ with DAG(
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": trd_dt,
-                "data_domain": "splits",
+                "data_domain": DATA_DOMAINS["SPLITS"],
                 "allow_empty": True,
+                "vendor": VENDORS['EODHD']
             },
         )
 
@@ -78,7 +77,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": "dividends",
+                "data_domain": DATA_DOMAINS["DIVIDENDS"],
                 "trd_dt": trd_dt,
             },
         )
@@ -90,8 +89,9 @@ with DAG(
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": trd_dt,
-                "data_domain": "dividends",
+                "data_domain": DATA_DOMAINS["DIVIDENDS"],
                 "allow_empty": True,
+                "vendor": VENDORS['EODHD']
             },
         )
 
@@ -112,7 +112,7 @@ with DAG(
         method_name="fetch_and_load",
         op_kwargs={
             "exchange_code": exchange_code,
-            "data_domain": "symbol_changes",
+            "data_domain": DATA_DOMAINS['SYMBOL_CHANGES'],
             "trd_dt": trd_dt,
         },
     )
@@ -123,9 +123,10 @@ with DAG(
         method_name="validate",
         op_kwargs={
             "exchange_code": exchange_code,
-            "data_domain": "symbol_changes",
+            "data_domain": DATA_DOMAINS['SYMBOL_CHANGES'],
             "trd_dt": trd_dt,
             "allow_empty": True,
+            "vendor": VENDORS['EODHD']
         },
     )
 

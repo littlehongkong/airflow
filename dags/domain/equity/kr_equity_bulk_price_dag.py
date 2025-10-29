@@ -3,10 +3,9 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from datetime import datetime
 from plugins.operators.pipeline_operator import PipelineOperator
-from plugins.pipelines.equity_price_pipeline import EquityPricePipeline
-from plugins.validators.equity_price_validator import EquityPriceValidator
-
-DATA_DOMAIN = "equity_prices"
+from plugins.pipelines.lake.equity.equity_price_pipeline import EquityPricePipeline
+from plugins.validators.lake.equity.equity_price_validator import EquityPriceValidator
+from plugins.config.constants import VENDORS, DATA_DOMAINS
 
 with DAG(
     dag_id="kr_equity_price_pipeline",
@@ -36,7 +35,7 @@ with DAG(
             },
             params={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAIN,
+                "data_domain": DATA_DOMAINS['PRICES']
             },
         )
 
@@ -50,10 +49,11 @@ with DAG(
                 "trd_dt": "{{ ds }}",
                 "data_domain": "{{ params.data_domain }}",
                 "allow_empty": True,
+                "vendor": VENDORS['EODHD']
             },
             params={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAIN,
+                "data_domain": DATA_DOMAINS['PRICES'],
             },
         )
 

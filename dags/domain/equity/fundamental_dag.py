@@ -4,11 +4,11 @@ from airflow.decorators import task
 from airflow.models import Variable
 from datetime import datetime
 from plugins.operators.pipeline_operator import PipelineOperator
-from plugins.pipelines.fundamental_pipeline import FundamentalPipeline
-from plugins.validators.fundamental_validator import FundamentalValidator
+from plugins.pipelines.lake.equity.fundamental_pipeline import FundamentalPipeline
+from plugins.validators.lake.equity.fundamental_validator import FundamentalValidator
 from plugins.utils.symbol_loader import load_symbols_from_datalake_pd
 import json
-
+from plugins.config.constants import VENDORS, DATA_DOMAINS
 
 # ---------------------------------------------------------------------
 # ⚙️ Variable 로드 (Airflow UI → Admin → Variables)
@@ -44,7 +44,7 @@ with DAG(
         # ---------------------------------------------------------
         @task(task_id=f"load_symbols_{exchange_code}")
         def load_symbols(trd_dt: str) -> list:
-            df = load_symbols_from_datalake_pd(exchange_code=exchange_code, trd_dt=trd_dt)
+            df = load_symbols_from_datalake_pd(exchange_code=exchange_code, trd_dt=trd_dt, vendor=VENDORS["EODHD"])
             symbols = df["Code"].dropna().astype(str).unique().tolist()
             # symbols = ['AAPL', 'TSLA', 'LABU', 'TMF']
             return symbols
@@ -93,8 +93,9 @@ with DAG(
             method_name="validate",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": "fundamentals",
-                "trd_dt": "{{ ds }}"
+                "data_domain": DATA_DOMAINS['FUNDAMENTALS'],
+                "trd_dt": "{{ ds }}",
+                "vendor": VENDORS["EODHD"]
             },
         )
 

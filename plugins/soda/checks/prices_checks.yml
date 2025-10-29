@@ -1,8 +1,8 @@
-# equity_prices_checks.yml
+# prices_checks.yml
 # 목적: 주가 데이터 품질 검증 (Data Lake 단계 - 최소 검증)
 # DuckDB 데이터 소스 기준
 
-checks for equity_prices:
+checks for prices:
 
   # 1️⃣ 기본 행 수 확인 (데이터가 아예 없지는 않은지)
   - row_count > 0
