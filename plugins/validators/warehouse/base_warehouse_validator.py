@@ -15,6 +15,7 @@ Warehouse Base Validator (Refactored)
 import duckdb
 import pandas as pd
 import json
+import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from plugins.validators.base_validator_interface import BaseValidatorInterface
@@ -23,17 +24,23 @@ from datetime import datetime, timezone
 
 
 class BaseWarehouseValidator(BaseValidatorInterface):
-    """
-    ✅ Warehouse 공통 Validator
-    """
-
-    def __init__(self, domain: str, snapshot_dt: str, warehouse_root: Path = DATA_WAREHOUSE_ROOT):
-        super().__init__()
+    def __init__(
+        self,
+        domain: str,
+        snapshot_dt: str,
+        partition_key: str = "snapshot_dt",
+        partition_value: Optional[str] = None,
+        warehouse_root: Path = Path("/opt/airflow/data/data_warehouse"),
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
         self.domain = domain
         self.snapshot_dt = snapshot_dt
+        self.partition_key = partition_key
+        self.partition_value = partition_value  # ✅ 이제 optional
         self.warehouse_root = warehouse_root
-        self.conn: Optional[duckdb.DuckDBPyConnection] = None
-        self.log.info(f"Initialized validator for domain={domain}, snapshot_dt={snapshot_dt}")
+        self.duckdb_path = warehouse_root / "duckdb" / f"{domain}.duckdb"
+        self.conn = None
 
     # -------------------------------------------------------------------------
     # 1️⃣ Validation Entry Point
@@ -99,21 +106,41 @@ class BaseWarehouseValidator(BaseValidatorInterface):
     # 3️⃣ Utility Checks
     # -------------------------------------------------------------------------
     def _check_row_count(self, df: pd.DataFrame, min_rows: int = 1) -> Dict[str, Any]:
-        count = len(df)
-        return {"passed": count >= min_rows, "value": count, "expected": f">={min_rows}", "message": f"row_count={count}"}
+        value = int(len(df))
+        return {
+            "passed": bool(value >= min_rows),
+            "value": value,
+            "expected": f">={min_rows}",
+            "message": f"Row count = {value}",
+        }
 
     def _check_no_nulls(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
-        null_count = df[column].isnull().sum()
-        return {"passed": null_count == 0, "value": null_count, "expected": 0, "message": f"nulls in {column}: {null_count}"}
+        null_count = int(df[column].isnull().sum())
+        return {
+            "passed": bool(null_count == 0),
+            "value": null_count,
+            "expected": 0,
+            "message": f"Null count in {column}: {null_count}",
+        }
 
     def _check_no_duplicates(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
-        dup_count = df[column].duplicated().sum()
-        return {"passed": dup_count == 0, "value": dup_count, "expected": 0, "message": f"duplicates in {column}: {dup_count}"}
+        dup_count = int(df[column].duplicated().sum())
+        return {
+            "passed": bool(dup_count == 0),
+            "value": dup_count,
+            "expected": 0,
+            "message": f"Duplicate count in {column}: {dup_count}",
+        }
 
-    def _check_foreign_key(self, df: pd.DataFrame, ref_df: pd.DataFrame, fk_col: str, ref_col: str) -> Dict[str, Any]:
-        missing = df[~df[fk_col].isin(ref_df[ref_col])]
-        miss_count = len(missing)
-        return {"passed": miss_count == 0, "value": miss_count, "expected": 0, "message": f"missing FK in {fk_col}: {miss_count}"}
+    def _check_foreign_key(self, df: pd.DataFrame, ref_df: pd.DataFrame, fk_column: str, ref_column: str) -> Dict[
+        str, Any]:
+        missing_count = int(len(df[~df[fk_column].isin(ref_df[ref_column])]))
+        return {
+            "passed": bool(missing_count == 0),
+            "value": missing_count,
+            "expected": 0,
+            "message": f"Missing foreign key values in {fk_column}: {missing_count}",
+        }
 
     def _aggregate_status(self, checks: Dict[str, Any]) -> str:
         if not checks:
@@ -154,16 +181,43 @@ class BaseWarehouseValidator(BaseValidatorInterface):
             result["task_id"] = task_id
         return result
 
-    def _save_validation_result(self, result: Dict[str, Any]) -> Path:
-        """검증 결과 JSON 저장"""
+    def _save_validation_result(self, result: Dict[str, Any], **kwargs) -> Path:
+
+        def _make_json_serializable(obj):
+            import numpy as np
+
+            if isinstance(obj, (np.bool_, bool)):
+                return bool(obj)
+            elif isinstance(obj, (np.integer, int)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, float)):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: _make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [_make_json_serializable(v) for v in obj]
+            else:
+                return obj
+
+        # ✅ 변환 수행
+        serializable_result = _make_json_serializable(result)
+
+        # ✅ 저장
         result_dir = self.warehouse_root / self.domain / "validation"
         result_dir.mkdir(parents=True, exist_ok=True)
-        file_name = f"{self.domain}_{self.snapshot_dt}_validation.json"
-        result_path = result_dir / file_name
-        with open(result_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        self.log.info(f"💾 Validation result saved: {result_path}")
-        return result_path
+
+        # ✅ 파일명 규칙: {domain}_{partition(optional)}_{snapshot_dt}_validation.json
+        if self.partition_value:
+            filename = f"{self.domain}_{self.partition_value}_{self.snapshot_dt}_validation.json"
+        else:
+            filename = f"{self.domain}_{self.snapshot_dt}_validation.json"
+
+        output_path = result_dir / filename
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(serializable_result, f, indent=2, ensure_ascii=False)
+
+        self.log.info(f"💾 Saved validation result: {output_path}")
+        return output_path
 
     # -------------------------------------------------------------------------
     # 5️⃣ Optional: Pandera / Soda Core 연동 (확장 포인트)

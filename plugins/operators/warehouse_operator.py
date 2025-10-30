@@ -5,10 +5,9 @@ from plugins.utils.pipeline_helper import run_and_log
 
 class WarehouseOperator(BaseOperator):
     """
-    ✅ Warehouse 빌드 전용 Operator (Airflow 3.x 호환)
-    - BaseWarehousePipeline 하위 클래스 실행
-    - build() 메서드 자동 호출
-    - 템플릿 렌더링은 Airflow가 자동 수행
+    ✅ Warehouse 빌드/검증 전용 Operator (Airflow 3.x 호환)
+    - BaseWarehousePipeline: build()
+    - BaseWarehouseValidator: validate()
     """
 
     template_fields = ("op_kwargs",)
@@ -36,12 +35,11 @@ class WarehouseOperator(BaseOperator):
         dag_id = context["dag"].dag_id
 
         self.log.info(
-            f"🏭 [WarehouseOperator] Starting warehouse build | "
+            f"🏭 [WarehouseOperator] Starting warehouse process | "
             f"DAG={dag_id} | Task={task_id} | "
             f"Pipeline={self.pipeline_cls.__name__}"
         )
 
-        # ✅ Airflow가 템플릿을 자동으로 렌더링하므로, 그대로 사용
         rendered_kwargs = self.op_kwargs
         self.log.info(f"📋 Pipeline kwargs: {rendered_kwargs}")
 
@@ -49,25 +47,36 @@ class WarehouseOperator(BaseOperator):
         try:
             pipeline = self.pipeline_cls(**rendered_kwargs)
 
-            # build() 실행 + 로그 기록
+            # ✅ build() 또는 validate() 자동 식별
+            if hasattr(pipeline, "build"):
+                func = pipeline.build
+                self.log.info("🏗️ Detected Pipeline class → executing build()")
+            elif hasattr(pipeline, "validate"):
+                func = pipeline.validate
+                self.log.info("🔍 Detected Validator class → executing validate()")
+            else:
+                raise AttributeError(
+                    f"❌ {self.pipeline_cls.__name__} has no valid method (build/validate)"
+                )
+
+            # 실행 + 로그 기록
             result = run_and_log(
-                func=pipeline.build,
+                func=func,
                 context=context,
                 op_kwargs=rendered_kwargs,
                 postgres_conn_id=self.postgres_conn_id,
-                dag_id=context['dag'].dag_id,
+                dag_id=dag_id,
                 task_id=self.task_id,
-                layer='warehouse'
+                layer="warehouse",
             )
 
-
             self.log.info(
-                f"✅ [SUCCESS] Warehouse build completed | "
+                f"✅ [SUCCESS] Warehouse process completed | "
                 f"Pipeline={self.pipeline_cls.__name__} | "
                 f"Result keys: {list(result.keys())}"
             )
 
-            if self.cleanup_on_success and pipeline:
+            if self.cleanup_on_success and hasattr(pipeline, "cleanup"):
                 pipeline.cleanup()
                 self.log.info("🧹 Resources cleaned up (success)")
 
@@ -75,12 +84,12 @@ class WarehouseOperator(BaseOperator):
 
         except Exception as e:
             self.log.error(
-                f"❌ [FAILURE] Warehouse build failed | "
+                f"❌ [FAILURE] Warehouse process failed | "
                 f"Pipeline={self.pipeline_cls.__name__} | "
                 f"Error: {str(e)}"
             )
 
-            if self.cleanup_on_failure and pipeline:
+            if self.cleanup_on_failure and hasattr(pipeline, "cleanup"):
                 try:
                     pipeline.cleanup()
                     self.log.info("🧹 Resources cleaned up (failure)")
@@ -92,9 +101,9 @@ class WarehouseOperator(BaseOperator):
 
 class WarehouseBatchOperator(BaseOperator):
     """
-    ✅ Warehouse 배치 빌드 Operator (Airflow 3.x 호환)
-    - 여러 국가/파티션 반복 실행
-    - 템플릿 자동 렌더링
+    ✅ Warehouse 배치 빌드/검증 Operator (Airflow 3.x 호환)
+    - 여러 파티션 반복 실행
+    - build()/validate() 자동 감지
     """
 
     template_fields = ("batch_configs",)
@@ -117,7 +126,7 @@ class WarehouseBatchOperator(BaseOperator):
 
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
         self.log.info(
-            f"🏭 [WarehouseBatchOperator] Starting batch build | "
+            f"🏭 [WarehouseBatchOperator] Starting batch process | "
             f"Pipeline={self.pipeline_cls.__name__} | "
             f"Batch size={len(self.batch_configs)}"
         )
@@ -126,7 +135,6 @@ class WarehouseBatchOperator(BaseOperator):
         success_count = 0
         failure_count = 0
 
-        # ✅ Airflow가 이미 템플릿 렌더링을 수행했으므로 그대로 사용
         for idx, rendered_config in enumerate(self.batch_configs, 1):
             config_label = (
                 rendered_config.get("country_code")
@@ -140,8 +148,16 @@ class WarehouseBatchOperator(BaseOperator):
             try:
                 pipeline = self.pipeline_cls(**rendered_config)
 
+                # ✅ build() / validate() 자동 인식
+                if hasattr(pipeline, "build"):
+                    func = pipeline.build
+                elif hasattr(pipeline, "validate"):
+                    func = pipeline.validate
+                else:
+                    raise AttributeError(f"{self.pipeline_cls.__name__} has no valid method")
+
                 result = run_and_log(
-                    func=pipeline.build,
+                    func=func,
                     context=context,
                     op_kwargs=rendered_config,
                 )
@@ -152,26 +168,24 @@ class WarehouseBatchOperator(BaseOperator):
                     "result": result,
                 })
                 success_count += 1
-
                 self.log.info(f"✅ [{config_label}] Success")
 
-                if self.cleanup_on_success and pipeline:
+                if self.cleanup_on_success and hasattr(pipeline, "cleanup"):
                     pipeline.cleanup()
 
             except Exception as e:
-                error_msg = str(e)
-                self.log.error(f"❌ [{config_label}] Failed: {error_msg}")
+                self.log.error(f"❌ [{config_label}] Failed: {str(e)}")
                 results.append({
                     "config": rendered_config,
                     "status": "failure",
-                    "error": error_msg,
+                    "error": str(e),
                 })
                 failure_count += 1
 
-                if pipeline:
+                if hasattr(pipeline, "cleanup"):
                     try:
                         pipeline.cleanup()
-                    except:
+                    except Exception:
                         pass
 
                 if self.fail_fast:
@@ -188,11 +202,5 @@ class WarehouseBatchOperator(BaseOperator):
             f"🏁 [BATCH COMPLETE] Success: {success_count}/{len(self.batch_configs)} | "
             f"Failures: {failure_count}"
         )
-
-        if failure_count > 0 and not self.fail_fast:
-            self.log.warning(
-                f"⚠️ Batch completed with {failure_count} failures. "
-                f"Check individual results."
-            )
 
         return summary

@@ -42,12 +42,12 @@ class ExchangeMasterValidator(BaseWarehouseValidator):
 
         # 2️⃣ 국가 코드 형식 검증 (ISO3)
         if "country_code" in df.columns:
-            invalid_iso3 = df[~df["country_code"].str.match(r"^[A-Z]{3}$", na=False)]
-            checks["valid_country_iso3"] = {
-                "passed": invalid_iso3.empty,
-                "value": len(invalid_iso3),
-                "expected": "3-letter uppercase ISO3 (e.g., USA, KOR)",
-                "message": f"Invalid ISO3 codes: {len(invalid_iso3)}",
+            invalid_iso = df[~df["country_code"].str.match(r"^[A-Z]{2}$", na=False)]
+            checks["valid_country_iso2"] = {
+                "passed": bool(invalid_iso.empty),
+                "value": int(len(invalid_iso)),
+                "expected": "2-letter uppercase (e.g., US, KR)",
+                "message": f"Invalid ISO2 codes: {len(invalid_iso)}",
             }
 
         # 3️⃣ 통화 코드 검증 (3자리 알파벳)
