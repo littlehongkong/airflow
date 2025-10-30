@@ -53,7 +53,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAINS["SPLITS"],
+                "data_domain": DATA_DOMAINS["splits"],
                 "trd_dt": trd_dt,
             },
         )
@@ -65,7 +65,7 @@ with DAG(
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": trd_dt,
-                "data_domain": DATA_DOMAINS["SPLITS"],
+                "data_domain": DATA_DOMAINS["splits"],
                 "allow_empty": True,
                 "vendor": VENDORS['EODHD']
             },
@@ -77,7 +77,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAINS["DIVIDENDS"],
+                "data_domain": DATA_DOMAINS["dividends"],
                 "trd_dt": trd_dt,
             },
         )
@@ -89,7 +89,7 @@ with DAG(
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": trd_dt,
-                "data_domain": DATA_DOMAINS["DIVIDENDS"],
+                "data_domain": DATA_DOMAINS["dividends"],
                 "allow_empty": True,
                 "vendor": VENDORS['EODHD']
             },
@@ -112,7 +112,7 @@ with DAG(
         method_name="fetch_and_load",
         op_kwargs={
             "exchange_code": exchange_code,
-            "data_domain": DATA_DOMAINS['SYMBOL_CHANGES'],
+            "data_domain": DATA_DOMAINS['symbol_changes'],
             "trd_dt": trd_dt,
         },
     )
@@ -123,7 +123,7 @@ with DAG(
         method_name="validate",
         op_kwargs={
             "exchange_code": exchange_code,
-            "data_domain": DATA_DOMAINS['SYMBOL_CHANGES'],
+            "data_domain": DATA_DOMAINS['symbol_changes'],
             "trd_dt": trd_dt,
             "allow_empty": True,
             "vendor": VENDORS['EODHD']

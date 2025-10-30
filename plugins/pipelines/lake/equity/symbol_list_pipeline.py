@@ -12,4 +12,4 @@ class SymbolListPipeline(BaseEquityPipeline):
 
     def fetch(self, **kwargs):
         data = self.hook.get_exchange_symbols(exchange_code=self.exchange_code)
-        return self._standardize_fetch_output(data)
+        return data

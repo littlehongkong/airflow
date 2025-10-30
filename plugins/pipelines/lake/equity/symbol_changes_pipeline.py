@@ -20,4 +20,4 @@ class SymbolChangePipeline(BaseEquityPipeline):
 
     def fetch(self, **kwargs):
         data = self.hook.get_symbol_changes(trd_dt=self.trd_dt)
-        return self._standardize_fetch_output(data)
+        return data

@@ -21,14 +21,14 @@ with DAG(
         task_id="fetch_exchange_list",
         pipeline_cls=ExchangeInfoPipeline,
         method_name="fetch_and_load",
-        op_kwargs={"data_domain": DATA_DOMAINS["EXCHANGE_LIST"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL'},
+        op_kwargs={"data_domain": DATA_DOMAINS["exchange_list"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL'},
     )
 
     validate_exchange_list = PipelineOperator(
         task_id="validate_exchange_list",
         pipeline_cls=ExchangeInfoValidator,
         method_name="validate",
-        op_kwargs={"data_domain": DATA_DOMAINS["EXCHANGE_LIST"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL', "vendor": VENDORS['EODHD']},
+        op_kwargs={"data_domain": DATA_DOMAINS["exchange_list"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL', "vendor": VENDORS['EODHD']},
     )
 
     end_task = EmptyOperator(task_id="end_pipeline")

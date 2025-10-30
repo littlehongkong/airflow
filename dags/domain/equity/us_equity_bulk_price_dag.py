@@ -31,7 +31,7 @@ with DAG(
         },
         params={
             "exchange_code": EXCHANGE_CODE,
-            "data_domain": DATA_DOMAINS['PRICES']
+            "data_domain": DATA_DOMAINS['prices']
         },
     )
 
@@ -49,7 +49,7 @@ with DAG(
         },
         params={
             "exchange_code": EXCHANGE_CODE,
-            "data_domain": DATA_DOMAINS["PRICES"],
+            "data_domain": DATA_DOMAINS["prices"],
         },
     )
 

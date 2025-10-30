@@ -93,7 +93,7 @@ with DAG(
             method_name="validate",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAINS['FUNDAMENTALS'],
+                "data_domain": DATA_DOMAINS['fundamentals'],
                 "trd_dt": "{{ ds }}",
                 "vendor": VENDORS["EODHD"]
             },

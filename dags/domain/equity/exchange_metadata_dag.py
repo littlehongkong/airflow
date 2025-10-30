@@ -47,7 +47,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "data_domain": DATA_DOMAINS["SYMBOL_LIST"],
+                "data_domain": DATA_DOMAINS["symbol_list"],
                 "trd_dt": "{{ ds }}",
             },
             dag=dag,
@@ -60,7 +60,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": "{{ ds }}",
-                "data_domain": DATA_DOMAINS["SYMBOL_LIST"],
+                "data_domain": DATA_DOMAINS["symbol_list"],
                 "allow_empty": False,
                 "vendor": VENDORS["EODHD"],
             },
@@ -131,7 +131,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": "US",
-                "data_domain": DATA_DOMAINS["EXCHANGE_HOLIDAY"],
+                "data_domain": DATA_DOMAINS["exchange_holiday"],
                 "trd_dt": "{{ ds }}",
             },
             dag=dag,
@@ -144,7 +144,7 @@ with DAG(
             op_kwargs={
                 "exchange_code": "US",
                 "trd_dt": "{{ ds }}",
-                "data_domain": DATA_DOMAINS["EXCHANGE_HOLIDAY"],
+                "data_domain": DATA_DOMAINS["exchange_holiday"],
                 "allow_empty": True,
                 "vendor": VENDORS["EODHD"],
             },

@@ -1,31 +1,30 @@
-# plugins/utils/partition_finder.py
 from pathlib import Path
-from typing import Optional, List, Tuple
-from plugins.config.constants import DATA_LAKE_ROOT
+from typing import Optional
+from plugins.config.constants import DATA_LAKE_ROOT, WAREHOUSE_SOURCE_MAP
 
-def _list_dirs(p: Path) -> List[Path]:
-    return [d for d in p.iterdir() if d.is_dir()]
+def _normalize_domain(domain: str) -> str:
+    """Lake 도메인을 Warehouse 호환형으로 정규화"""
+    for wh_domain, sources in WAREHOUSE_SOURCE_MAP.items():
+        if domain in sources:
+            return wh_domain
+    return domain
 
 def latest_trd_dt_path(domain: str, exchange_code: str, vendor: str, layer: str = "validated") -> Optional[Path]:
-    """
-    /data_lake/{layer}/{domain}/vendor={vendor}/exchange_code={ex}/trd_dt=YYYY-MM-DD/ 를 스캔해서
-    가장 최신 날짜 경로를 반환. 없으면 None.
-    """
-    base = DATA_LAKE_ROOT / layer / domain / f"vendor={vendor}" / f"exchange_code={exchange_code}"
-    if not base.exists():
+    """가장 최근 거래일 디렉토리 경로 탐색"""
+    normalized = _normalize_domain(domain)
+    base_path = DATA_LAKE_ROOT / layer / normalized / f"vendor={vendor}" / f"exchange_code={exchange_code}"
+    if not base_path.exists():
         return None
-    trd_dirs = [d for d in _list_dirs(base) if d.name.startswith("trd_dt=")]
-    if not trd_dirs:
-        return None
-    # 정렬: trd_dt=YYYY-MM-DD 문자열 사전순 == 날짜 오름차순
-    trd_dirs.sort(key=lambda p: p.name)
-    return trd_dirs[-1]  # 최신
+
+    trd_dirs = sorted([p for p in base_path.iterdir() if p.is_dir() and p.name.startswith("trd_dt=")], reverse=True)
+    return trd_dirs[0] if trd_dirs else None
 
 def parquet_file_in(partition_dir: Path, domain: str) -> Optional[Path]:
-    """
-    파티션 디렉터리 내 파일명 {domain}.parquet를 반환
-    """
-    if not partition_dir:
-        return None
-    f = partition_dir / f"{domain}.parquet"
-    return f if f.exists() else None
+    """파티션 내 parquet 파일 탐색"""
+    normalized = _normalize_domain(domain)
+    candidate = partition_dir / f"{normalized}.parquet"
+    if candidate.exists():
+        return candidate
+    for f in partition_dir.glob("*.parquet"):
+        return f
+    return None

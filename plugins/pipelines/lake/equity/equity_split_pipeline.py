@@ -16,4 +16,4 @@ class EquitySplitPipeline(BaseEquityPipeline):
 
     def fetch(self, **kwargs):
         data = self.hook.get_splits(exchange_code=self.exchange_code, trd_dt=self.trd_dt)
-        return self._standardize_fetch_output(data)
+        return data
