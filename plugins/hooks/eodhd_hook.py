@@ -1,6 +1,7 @@
 from airflow.providers.http.hooks.http import HttpHook
 from typing import Any, Dict, List
-from datetime import datetime, timedelta
+from plugins.config.constants import VENDORS
+
 
 class EODHDHook(HttpHook):
     """
@@ -17,7 +18,7 @@ class EODHDHook(HttpHook):
         self.api_token = self.connection.extra_dejson.get("api_token")
 
         # ✅ Hook의 “현재 호출 맥락” 저장용
-        self.vendor = "EODHD"
+        self.vendor = VENDORS["EODHD"]
         self.endpoint = None
         self.params = None
 
@@ -106,7 +107,7 @@ class EODHDHook(HttpHook):
     # ------------------------------
     # 거래소 리스트
     # ------------------------------
-    def get_exchange_list(self):
+    def get_exchanges_list(self):
         """거래소 코드 리스트"""
         endpoint = f"api/exchanges-list"
         self.log.info(f"Fetching exchange list")

@@ -33,6 +33,9 @@ def run_and_log(func, postgres_conn_id, dag_id, task_id, airflow_context=None, *
     result_info = {}
     status = "SUCCESS"
     error_message = None
+    layer = kwargs.get("layer")
+
+    assert layer is not None, '로그테이블에 적재할 layer 정보를 기입하지 않았습니다.'
 
     try:
         # 실제 task 함수 실행
@@ -51,8 +54,10 @@ def run_and_log(func, postgres_conn_id, dag_id, task_id, airflow_context=None, *
             result_info["record_count"] = None
 
         # ✅ 성공 시 로그 남기기
-        _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message)
+        _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message, layer)
         print(f"📘 로그 저장 완료 [SUCCESS] - {result_info}")
+
+
     except Exception as e:
         status = "FAILED"
         error_message = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
@@ -61,20 +66,23 @@ def run_and_log(func, postgres_conn_id, dag_id, task_id, airflow_context=None, *
         result_info = {**op_kwargs, "status": "failed"}
 
         # ✅ 로그 남기고 재-raise
-        _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message)
+        _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message, layer)
         print(f"📘 로그 저장 완료 [FAILED] - {result_info}")
 
         raise
 
+# psql -U postgres -d postgres
 
-def _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message):
+    return result_info
+
+def _insert_pipeline_log(pg_hook, dag_id, task_id, status, result_info, error_message, layer: str = 'lake'):
     """공통 로그 insert 함수"""
     insert_sql = """
-        INSERT INTO pipeline_task_log(dag_id, task_id, run_time, status, result_info, error_message)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO pipeline_task_log(dag_id, task_id, run_time, status, result_info, error_message, layer)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """
     pg_hook.run(
         insert_sql,
         parameters=(dag_id, task_id, datetime.utcnow(), status, json.dumps(result_info, ensure_ascii=False),
-                    error_message),
+                    error_message, layer),
     )

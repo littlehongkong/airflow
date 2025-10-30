@@ -1,5 +1,5 @@
 import argparse
-from plugins.pipelines.equity_price_pipeline import EquityPricePipeline
+from plugins.pipelines.lake.equity.equity_price_pipeline import EquityPricePipeline
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

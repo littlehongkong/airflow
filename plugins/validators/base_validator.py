@@ -10,7 +10,7 @@ import duckdb
 import logging
 from typing import Optional, Tuple, Any, Dict
 from pandera import DataFrameSchema
-from plugins.pipelines.base_equity_pipeline import LOCAL_DATA_LAKE_PATH
+from plugins.config.constants import DATA_LAKE_ROOT
 from datetime import datetime, timezone
 
 class BaseDataValidator:
@@ -27,7 +27,7 @@ class BaseDataValidator:
     schema: Optional[DataFrameSchema] = None
     soda_check_file: Optional[str] = None  # 예: "/opt/airflow/plugins/soda/checks/equity_price_checks.yml"
 
-    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, layer: str = "raw", **kwargs):
+    def __init__(self, exchange_code: str, trd_dt: str, data_domain: str, layer: str = "raw", vendor: str = None, **kwargs):
         self.exchange_code = exchange_code
         self.trd_dt = trd_dt
         self.layer = layer
@@ -37,6 +37,14 @@ class BaseDataValidator:
         # ✅ DAG에서 넘겨주는 추가 인자 처리
         self.allow_empty = kwargs.get("allow_empty", False)
 
+        self.vendor = (vendor or "").lower()
+        if not self.vendor:
+            raise ValueError(
+                f"❌ vendor 값이 지정되지 않았습니다. "
+                f"Validator 초기화 시 vendor 인자가 필수입니다 "
+                f"(data_domain={data_domain}, exchange_code={exchange_code})."
+            )
+
     # ----------------------------------------------------------------------
     # ✅ 1️⃣ Data Lake 경로 헬퍼
     # ----------------------------------------------------------------------
@@ -44,10 +52,10 @@ class BaseDataValidator:
         """Hive-style 경로 반환 (/data_lake/{layer}/{domain}/exchange_code=..../trd_dt=...)"""
         layer = layer or self.layer
         base_path = os.path.join(
-            LOCAL_DATA_LAKE_PATH,
-            "data_lake",
+            DATA_LAKE_ROOT,
             layer,
             self.data_domain,
+            f"vendor={self.vendor}",
             f"exchange_code={self.exchange_code}",
             f"trd_dt={self.trd_dt}"
         )
@@ -231,7 +239,7 @@ class BaseDataValidator:
                         print(f"  ⚠️ ERROR: {log.message}")
 
             # ✅ validated 메타데이터 디렉토리 (파티션 없이 최상위에 저장)
-            validated_base = os.path.join(LOCAL_DATA_LAKE_PATH, "data_lake", "validated")
+            validated_base = os.path.join(DATA_LAKE_ROOT, "validated")
             validated_metadata_dir = os.path.join(
                 validated_base,
                 "_metadata",
@@ -308,7 +316,10 @@ class BaseDataValidator:
 
             # 빈 Parquet 파일도 함께 생성 (schema 유지)
             validated_dir = self._get_lake_path("validated")
-            validated_parquet_path = os.path.join(validated_dir, f"{self.data_domain}.parquet")
+            validated_parquet_path = os.path.join(
+                self._get_lake_path("validated"),  # vendor-aware 경로 자동 생성
+                f"{self.data_domain}.parquet"
+            )
 
             import pyarrow as pa
             import pyarrow.parquet as pq
@@ -320,6 +331,7 @@ class BaseDataValidator:
             # _last_validated.json 작성
             last_validated_meta = {
                 "dataset": self.data_domain,
+                "vendor": self.vendor,
                 "last_validated_timestamp": datetime.now(timezone.utc).isoformat(),
                 "validation_log_file": None,
                 "source_file": None,
@@ -365,6 +377,7 @@ class BaseDataValidator:
         # --- 공통 반환 구조 ---
         return {
             "data_domain": self.data_domain,
+            "vendor": self.vendor,
             "exchange_code": self.exchange_code,
             "trd_dt": self.trd_dt,
             "status": validation_result.get("final_status", "success"),
@@ -436,7 +449,7 @@ class BaseDataValidator:
     def _get_soda_check_path(self) -> Optional[str]:
         """
         data_domain 기반으로 Soda 체크파일 경로를 자동 탐색합니다.
-        예: equity_prices → /opt/airflow/plugins/soda/checks/equity_prices_checks.yml
+        예: equity_prices → /opt/airflow/plugins/soda/checks/prices_checks.yml
         """
         base_dir = "/opt/airflow/plugins/soda/checks"
         file_name = f"{self.data_domain}_checks.yml"
@@ -510,7 +523,7 @@ class BaseDataValidator:
             final_status = "warning"
 
         # ✅ 로그 파일 경로 생성
-        validated_base = os.path.join(LOCAL_DATA_LAKE_PATH, "data_lake", "validated")
+        validated_base = os.path.join(DATA_LAKE_ROOT, "data_lake", "validated")
         log_dir = os.path.join(validated_base, "_metadata", "validation_logs")
         os.makedirs(log_dir, exist_ok=True)
 

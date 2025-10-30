@@ -3,6 +3,8 @@ checks for symbol_changes:
   - missing_count(exchange) = 0
   - missing_count(old_symbol) = 0
   - missing_count(new_symbol) = 0
-  - invalid_percent(old_symbol = new_symbol) = 0
-  - invalid_percent(effective not like /^\d{4}-\d{2}-\d{2}$/) = 0
   - duplicate_count(old_symbol) = 0
+  - failed rows:
+      fail condition: old_symbol = new_symbol
+  - failed rows:
+      fail condition: NOT (CAST(effective AS VARCHAR) like '____-__-__')
