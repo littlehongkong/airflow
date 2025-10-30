@@ -1,81 +1,83 @@
 """
-Exchange Master Warehouse Validator
+Exchange Master Warehouse Validator (Refactored)
 -----------------------------------------
-- BaseWarehouseValidator 상속
-- 거래소 코드, 국가 코드 정합성 검증
+✅ 목적:
+- Warehouse(exchange) 적재 데이터의 품질 및 형식 검증
+- BaseWarehouseValidator 기반으로 단순화된 구조 유지
 """
 
-from pathlib import Path
 from typing import Dict, Any
 import pandas as pd
 from plugins.validators.warehouse.base_warehouse_validator import BaseWarehouseValidator
 
 
-
 class ExchangeMasterValidator(BaseWarehouseValidator):
+    """거래소 마스터 유효성 검증"""
+
     def __init__(self, snapshot_dt: str):
-        from plugins.config.constants import WAREHOUSE_DOMAIN
+        from plugins.config.constants import WAREHOUSE_DOMAINS
 
         super().__init__(
-            domain=WAREHOUSE_DOMAIN.get("EXCHANGE_MASTER"),
+            domain=WAREHOUSE_DOMAINS["exchange"],
             snapshot_dt=snapshot_dt,
-            partition_key="snapshot_dt",
-            partition_value=snapshot_dt,
         )
 
-    # ✅ warehouse parquet 경로 지정
-    def _get_parquet_path(self) -> Path:
-        return (
-            self.warehouse_root
-            / self.domain
-            / f"snapshot_dt={self.snapshot_dt}"
-            / f"{self.domain}.parquet"
-        )
-
-    # ✅ 실제 검증 로직 (_validate 필수 구현)
-    def _validate(self, **kwargs) -> Dict[str, Any]:
-        """
-        Warehouse 레벨의 데이터 유효성 검증
-        1. Parquet 로드
-        2. 정의된 체크 수행
-        3. 결과 반환
-        """
-        parquet_path = self._get_parquet_path()
-
-        if not parquet_path.exists():
-            raise FileNotFoundError(f"❌ Parquet file not found: {parquet_path}")
-
-        df = pd.read_parquet(parquet_path)
-        checks = self._define_checks(df)
-
-        # 결과 요약
-        passed = all(v.get("passed", False) for v in checks.values())
-        failed = [k for k, v in checks.items() if not v.get("passed", False)]
-
-        return {
-            "status": "success" if passed else "failed",
-            "record_count": len(df),
-            "output_file": parquet_path.as_posix(),
-            "checks": checks,
-            "failed_checks": failed,
-        }
-
-    # ✅ 각 컬럼 단위 체크 정의
+    # -------------------------------------------------------------------------
+    # ✅ 핵심 검증 로직
+    # -------------------------------------------------------------------------
     def _define_checks(self, df: pd.DataFrame) -> Dict[str, Any]:
-        checks = {
-            "row_count_positive": self._check_row_count(df, min_rows=1),
-            "no_null_exchange_code": self._check_no_nulls(df, "exchange_code"),
-            "no_duplicate_exchange_code": self._check_no_duplicates(df, "exchange_code"),
-            "no_null_country_code": self._check_no_nulls(df, "country_code"),
-        }
+        """
+        Warehouse(exchange) 데이터 검증 항목 정의
+        - 거래소 코드 중복/누락
+        - 국가 코드 ISO 형식
+        - 행 개수 유효성
+        """
+        checks = {}
 
-        # Country ISO2 형식 검증
-        invalid_iso = df[~df["country_code"].str.match(r"^[A-Z]{2}$", na=False)]
-        checks["valid_country_iso2"] = {
-            "passed": invalid_iso.empty,
-            "value": len(invalid_iso),
-            "expected": "2-letter uppercase (e.g., US, KR)",
-            "message": f"Invalid ISO2 codes: {len(invalid_iso)}",
-        }
+        # 1️⃣ 기본 무결성 검사
+        checks["row_count_positive"] = self._check_row_count(df, min_rows=1)
+        checks["no_null_exchange_code"] = self._check_no_nulls(df, "exchange_code")
+        checks["no_duplicate_exchange_code"] = self._check_no_duplicates(df, "exchange_code")
+        checks["no_null_country_code"] = self._check_no_nulls(df, "country_code")
+
+        # 2️⃣ 국가 코드 형식 검증 (ISO3)
+        if "country_code" in df.columns:
+            invalid_iso3 = df[~df["country_code"].str.match(r"^[A-Z]{3}$", na=False)]
+            checks["valid_country_iso3"] = {
+                "passed": invalid_iso3.empty,
+                "value": len(invalid_iso3),
+                "expected": "3-letter uppercase ISO3 (e.g., USA, KOR)",
+                "message": f"Invalid ISO3 codes: {len(invalid_iso3)}",
+            }
+
+        # 3️⃣ 통화 코드 검증 (3자리 알파벳)
+        if "currency" in df.columns:
+            invalid_currency = df[~df["currency"].astype(str).str.match(r"^[A-Z]{3}$", na=False)]
+            checks["valid_currency_format"] = {
+                "passed": invalid_currency.empty,
+                "value": len(invalid_currency),
+                "expected": "3-letter uppercase (e.g., USD, KRW)",
+                "message": f"Invalid currency codes: {len(invalid_currency)}",
+            }
+
+        # 4️⃣ 운영 MIC 코드 유효성 (선택적)
+        if "operating_mic" in df.columns:
+            missing_mic = df["operating_mic"].isnull().sum()
+            checks["valid_operating_mic"] = {
+                "passed": missing_mic == 0,
+                "value": missing_mic,
+                "expected": 0,
+                "message": f"Missing MIC values: {missing_mic}",
+            }
+
+        # 5️⃣ 중복된 국가+거래소코드 조합 검사
+        if {"country_code", "exchange_code"}.issubset(df.columns):
+            combo_dups = df.duplicated(subset=["country_code", "exchange_code"]).sum()
+            checks["unique_country_exchange_pair"] = {
+                "passed": combo_dups == 0,
+                "value": combo_dups,
+                "expected": 0,
+                "message": f"Duplicated country+exchange pairs: {combo_dups}",
+            }
 
         return checks

@@ -8,6 +8,11 @@ DEFAULT_LOCAL_ROOT = Path(os.getenv("DATA_ROOT_PATH", "/opt/airflow/data"))
 DATA_LAKE_ROOT = DEFAULT_LOCAL_ROOT / "data_lake"
 DATA_WAREHOUSE_ROOT = DEFAULT_LOCAL_ROOT / "data_warehouse"
 
+
+# ✅ 스키마 / 메타데이터 / 규칙 정의 경로
+CONFIG_ROOT = Path(__file__).resolve().parent
+SCHEMA_DIR = CONFIG_ROOT / "warehouse_schemas"
+
 # ==============================================
 # 🏷️ Vendors
 # ==============================================
