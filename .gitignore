@@ -28,6 +28,5 @@ Thumbs.db
 
 *.log
 .idea/*
-*.json
 *.jsonl
 /data/*
