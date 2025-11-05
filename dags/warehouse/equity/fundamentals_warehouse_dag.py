@@ -42,7 +42,7 @@ with DAG(
         pipeline_cls=FundamentalsTickerSplitPipeline,
         op_kwargs={
             "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
-            "vendor":  "{{ dag_run.conf.get('exchange_code', '') }}",
+            "vendor":  "{{ dag_run.conf.get('vendor', '') }}",
             "exchange_code": "{{ dag_run.conf.get('exchange_code', '') }}",   # ✅ 국가별 거래소
             "trd_dt": "{{ dag_run.conf.get('trd_dt', '') }}",
             "trigger_source": "{{ dag_run.conf.get('trigger_source', 'manual') }}"
