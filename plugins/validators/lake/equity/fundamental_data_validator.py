@@ -6,6 +6,7 @@ import pandas as pd, json, logging
 import gc
 
 import psutil, tracemalloc
+import traceback
 
 process = psutil.Process()
 tracemalloc.start()
@@ -77,12 +78,14 @@ class FundamentalDataValidator(BaseDataValidator):
         # ✅ 2. ETF/Stock 분기
         type_col = next((c for c in ["General_Type", "Type", "General.Type", "General_Type.value"] if c in df.columns),
                         None)
-        fund_type = "stock"
-        if type_col and df[type_col].astype(str).str.contains("ETF", case=False, na=False).any():
-            fund_type = "etf"
+
+        fund_type = "etf"
+        if type_col and df[type_col].astype(str).str.contains("Common Stock", case=False, na=False).any():
+            fund_type = "stock"
 
         # ✅ 3. Pandera Schema 적용
         schema_path = self.schema_root / f"fundamentals_{fund_type}.json"
+        self.log.info(f"schema_path : {schema_path}")
         if schema_path.exists():
             with open(schema_path, "r", encoding="utf-8") as f:
                 schema_def = json.load(f)
@@ -106,11 +109,12 @@ class FundamentalDataValidator(BaseDataValidator):
     def validate(self, context: Optional[dict] = None) -> Dict[str, Any]:
         """
         fundamentals 전용 검증 로직 (파일 단위)
-        - BaseDataValidator.validate() 구조와 동일하게 동작
+        - General 블록만 검증하되, 나머지 블록(Financials 등)은 그대로 유지
+        - 검증 성공 시 원본 전체 JSON을 validated로 복사
         """
         files = [
             f for f in self.dataset_path.glob("*.json")
-            if not f.name.startswith("_")  # _로 시작하는 파일 제외
+            if not f.name.startswith("_")
         ]
 
         if not files:
@@ -118,8 +122,7 @@ class FundamentalDataValidator(BaseDataValidator):
                 return self._skip_empty_result()
             raise FileNotFoundError(f"❌ No fundamental files found: {self.dataset_path}")
 
-        self.log.info(f"📁 {len(files)}개 파일 개별 검증 시작")
-        results = []
+        self.log.info(f"📁 {len(files)}개 fundamentals 파일 검증 시작")
 
         validated_dir = (
                 self.data_root
@@ -138,33 +141,23 @@ class FundamentalDataValidator(BaseDataValidator):
         total_passed, total_failed = 0, 0
         failed_symbols = []
 
-        self.log.info(f"📁 {len(files)}개 fundamentals 파일 검증 시작")
-
         for i, f in enumerate(files, 1):
-
-            before = process.memory_info().rss / (1024 * 1024)
-            snap_before = tracemalloc.take_snapshot()
-
-            self.log.info(f"🧠 [BEFORE] File {i}/{len(files)} - {f.name} - RSS: {before:.1f}MB")
-
             try:
-                # ✅ 전체 JSON 로드 대신 General만 로드
+                # ✅ 전체 JSON 로드 (General 외 key 포함)
                 with open(f, "r", encoding="utf-8") as infile:
-                    data = json.load(infile)
+                    full_data = json.load(infile)
 
-                # General 키만 사용
-                general_data = data.get("General", {})
+                # ✅ General 키만 검증용으로 추출
+                general_data = full_data.get("General", {})
                 if not general_data:
                     self.log.warning(f"⚠️ No 'General' key found in {f.name}")
                     continue
 
-                # ✅ General 부분만 평탄화
                 df = pd.json_normalize(general_data, sep="_")
                 df.columns = [c.replace(".", "_") for c in df.columns]
                 df.columns = [f"General_{c}" if not c.startswith("General_") else c for c in df.columns]
 
-
-                # ✅ 공통 검증 (Soda + Pandera)
+                # ✅ 검증 수행
                 checks = self._define_checks(df)
                 status = self._aggregate_status(checks)
 
@@ -173,40 +166,35 @@ class FundamentalDataValidator(BaseDataValidator):
                     "status": status,
                     "checks": checks,
                 }
-
                 with open(jsonl_path, "a", encoding="utf-8") as out_f:
                     out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
                 if status == "success":
                     total_passed += 1
+
+                    # ✅ 원본 전체 JSON (Financials 포함)을 validated로 그대로 복사
+                    validated_json_path = validated_dir / f"{f.stem}.json"
+                    with open(validated_json_path, "w", encoding="utf-8") as out_f:
+                        json.dump(full_data, out_f, ensure_ascii=False, indent=2)
+
                 else:
                     total_failed += 1
                     failed_symbols.append(f.stem)
-
-                with open(jsonl_path, "a", encoding="utf-8") as out_f:
-                    out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-                # ✅ (추가) 검증 성공 시 원본 JSON 저장
-                if status == "success":
-                    validated_json_path = validated_dir / f"{f.stem}.json"
-                    with open(validated_json_path, "w", encoding="utf-8") as out_f:
-                        json.dump(data, out_f, ensure_ascii=False, indent=2)
-
 
             except Exception as e:
                 total_failed += 1
                 failed_symbols.append(f.stem)
                 self.log.warning(f"⚠️ {f.name} 검증 실패: {e}")
+                self.log.info(traceback.format_exc())
                 continue
 
             finally:
-                # ✅ 메모리 강제 해제
-                for var in ["df", "data", "general_data", "checks"]:
+                # ✅ 메모리 정리
+                for var in ["df", "full_data", "general_data", "checks"]:
                     if var in locals():
                         del locals()[var]
                 gc.collect()
                 tracemalloc.clear_traces()
-
 
         # ---------------------------------------------------------------------
         # 2️⃣ 결과 요약
@@ -238,7 +226,6 @@ class FundamentalDataValidator(BaseDataValidator):
             meta_file=str(last_validated_path)
         )
 
-        # ✅ Airflow Task 상태 결정
         if total_failed > 0:
             self.log.error(f"❌ {total_failed:,}개 종목 검증 실패 — details: {last_validated_path}")
             raise ValueError(f"Fundamentals validation failed — {total_failed:,} files failed")

@@ -7,10 +7,7 @@
     {"name": "General_Name", "type": "String", "nullable": false},
     {"name": "General_Exchange", "type": "String", "nullable": true},
     {"name": "General_CurrencyCode", "type": "String", "nullable": true},
-    {"name": "General_CountryISO", "type": "String", "nullable": true},
-    {"name": "General_Category", "type": "String", "nullable": true},
-    {"name": "General_Description", "type": "String", "nullable": true},
-    {"name": "General_UpdatedAt", "type": "DateTime", "nullable": false}
+    {"name": "General_CountryISO", "type": "String", "nullable": true}
   ],
   "constraints": {
     "non_nullable": ["General_Code", "General_Name", "General_Type"],

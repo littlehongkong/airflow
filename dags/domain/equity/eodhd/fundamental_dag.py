@@ -81,6 +81,7 @@ with DAG(
                 "trigger_source": "fundamental_validation",
                 "exchange_code": exchange_code,
                 "domain_group": C.DOMAIN_GROUPS["equity"],
+                "vendor": C.VENDORS["eodhd"],
                 "trd_dt": "{{ ds }}",
             },
             wait_for_completion=False,  # ✅ 비동기 실행 (Lake 완료 후 병렬 가능)
