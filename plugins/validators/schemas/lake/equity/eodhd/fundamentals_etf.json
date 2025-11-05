@@ -1,0 +1,23 @@
+{
+  "table_name": "fundamentals_etf",
+  "description": "ETF 펀더멘털 공통 필드 검증 스키마 (EODHD API 기반)",
+  "columns": [
+    {"name": "General_Code", "type": "String", "nullable": false},
+    {"name": "General_Type", "type": "String", "nullable": false},
+    {"name": "General_Name", "type": "String", "nullable": false},
+    {"name": "General_Exchange", "type": "String", "nullable": true},
+    {"name": "General_CurrencyCode", "type": "String", "nullable": true},
+    {"name": "General_CountryISO", "type": "String", "nullable": true},
+    {"name": "General_Category", "type": "String", "nullable": true},
+    {"name": "General_Description", "type": "String", "nullable": true},
+    {"name": "General_UpdatedAt", "type": "DateTime", "nullable": false}
+  ],
+  "constraints": {
+    "non_nullable": ["General_Code", "General_Name", "General_Type"],
+    "patterns": {
+      "General_Code": "^[A-Z0-9\\.-]{1,15}$",
+      "General_CountryISO": "^[A-Z]{2}$",
+      "General_CurrencyCode": "^[A-Z]{3}$"
+    }
+  }
+}

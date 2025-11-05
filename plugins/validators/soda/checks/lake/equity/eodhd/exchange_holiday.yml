@@ -1,0 +1,23 @@
+checks for exchange_holiday:
+  # ✅ 데이터 존재
+  - row_count > 0
+
+  # ✅ 필수 필드 누락 검증
+  - missing_count(exchange_code) = 0
+  - missing_count(holiday_name) = 0
+  - missing_count(date) = 0
+
+  # ✅ 날짜 형식 검증 (DuckDB는 TIMESTAMP → VARCHAR 캐스팅 필요)
+  - failed rows:
+      name: invalid_date_format
+      fail condition: |
+        NOT REGEXP_MATCHES(CAST(date AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
+  # ✅ 거래소 코드 형식 검증
+  - failed rows:
+      name: invalid_exchange_code_format
+      fail condition: |
+        NOT REGEXP_MATCHES(exchange_code, '^[A-Z0-9]{1,10}$')
+
+  # ✅ 중복 검증
+  - duplicate_count(exchange_code, date) = 0

@@ -30,58 +30,116 @@
 ## 🗂️ 디렉토리 구조
 
 ```
-airflow/
+/opt/airflow
 ├── dags/
-│   └── equity/
-│       ├── corporate_actions_dag.py
-│       ├── exchange_metadata_dag.py
-│       ├── us_equity_bulk_price_dag.py
-│       ├── kr_equity_bulk_price_dag.py
-│       └── fundamental_dag.py
+│   ├── domain/
+│   │   ├── equity/
+│   │   │   ├── eodhd/
+│   │   │   │   ├── equity_price_dag.py
+│   │   │   │   ├── equity_dividend_dag.py
+│   │   │   │   └── fundamentals_dag.py
+│   │   │   ├── krx/
+│   │   │   │   ├── equity_price_dag.py
+│   │   │   │   ├── disclosure_dag.py
+│   │   │   │   └── fundamentals_dag.py
+│   │   │   └── investing/
+│   │   │       ├── equity_index_dag.py
+│   │   │       └── sector_dag.py
+│   │   ├── macro/
+│   │   │   ├── eodhd/
+│   │   │   ├── fred/
+│   │   │   └── statistic_korea/
+│   │   ├── fx/
+│   │   │   ├── eodhd/
+│   │   │   └── boj/
+│   │   └── crypto/
+│   │       ├── coingecko/
+│   │       ├── binance/
+│   │       └── upbit/
+│   │
+│   ├── warehouse/
+│   │   ├── equity/
+│   │   │   ├── equity_master_dag.py
+│   │   │   ├── fundamentals_merge_dag.py   # ✅ EODHD + KRX 통합
+│   │   │   └── price_normalization_dag.py
+│   │   ├── fx/
+│   │   ├── macro/
+│   │   ├── crypto/
+│   │   └── news/
+│   │
+│   └── mart/
+│       ├── portfolio/
+│       ├── sentiment/
+│       └── indicator/
 │
 ├── plugins/
-│   ├── hooks/
-│   │   └── eodhd_hook.py
-│   ├── pipelines/
-│   │   ├── base_equity_pipeline.py
-│   │   ├── equity_price_pipeline.py
-│   │   ├── symbol_list_pipeline.py
-│   │   ├── exchange_holiday_pipeline.py        
-│   │   ├── fundamental_pipeline.py
-│   │   ├── equity_dividend_pipeline.py
-│   │   ├── symbol_changes_pipeline.py
-│   │   └── equity_split_pipeline.py           
-
 │   ├── validators/
-│   │   ├── base_validator.py
-│   │   ├── equity_price_validator.py
-│   │   ├── equity_dividend_validator.py
-│   │   ├── equity_split_validator.py
-│   │   ├── symbol_list_validator.py
-│   │   ├── exchange_holiday_validator.py
-│   │   ├── fundamental_validator.py
-│   │   ├── symbol_change_checks.py
-│   │   ├── symbol_list_checks.py       
-│   │   └── equity_split_validator.py          
-│   ├── operators/
-│   │   └── pipeline_operator.py
-│   ├── utils/
-│   │   ├── interface.py
-│   │   ├── pipeline_helper.py
-│   │   └── symbol_loader.py
+│   │   ├── schemas/
+│   │   │   ├── lake/
+│   │   │   │   ├── equity/
+│   │   │   │   │   ├── eodhd/
+│   │   │   │   │   │   ├── equity_price.json
+│   │   │   │   │   │   ├── equity_dividend.json
+│   │   │   │   │   │   └── fundamentals.json
+│   │   │   │   │   ├── krx/
+│   │   │   │   │   │   ├── equity_price.json
+│   │   │   │   │   │   ├── disclosure.json
+│   │   │   │   │   │   └── fundamentals.json
+│   │   │   │   ├── macro/
+│   │   │   │   │   ├── eodhd/
+│   │   │   │   │   ├── fred/
+│   │   │   │   │   └── statistic_korea/
+│   │   │   └── warehouse/
+│   │   │       ├── equity/
+│   │   │       ├── fx/
+│   │   │       ├── macro/
+│   │   │       ├── crypto/
+│   │   │       └── news/
+│   │   │
+│   │   ├── checks/
+│   │   │   ├── lake/
+│   │   │   │   ├── equity/
+│   │   │   │   │   ├── eodhd/
+│   │   │   │   │   ├── krx/
+│   │   │   │   │   └── investing/
+│   │   │   │   ├── fx/
+│   │   │   │   └── macro/
+│   │   │   └── warehouse/
+│   │   │       ├── equity/
+│   │   │       ├── fx/
+│   │   │       ├── macro/
+│   │   │       └── crypto/
 │   │
-│   ├── soda/
-│   │   └── checks/
-│   │       ├── fundamentals_stock_checks.yml
-│   │       ├── equity_prices_checks.yml    
-│   │       ├── exchange_holiday_checks.yml    
-│   │       ├── fundamentals_etf_checks.yml    
-│   │       ├── fundamentals_stock_checks.yml    
-│   │       ├── symbol_change_checks.yml    
-│   │       ├── symbol_list_checks.yml    
-│   │       ├── dividends_checks.yml    
-│   │       └── splits_checks.yml       
-└── docker-compose.yaml
+│   ├── operators/
+│   └── pipelines/
+│
+├── data/
+│   ├── data_lake/
+│   │   ├── raw/
+│   │   │   ├── equity/
+│   │   │   │   ├── eodhd/
+│   │   │   │   ├── krx/
+│   │   │   │   └── investing/
+│   │   │   ├── macro/
+│   │   │   └── fx/
+│   │   └── validated/
+│   │       ├── equity/
+│   │       │   ├── eodhd/
+│   │       │   └── krx/
+│   │       └── macro/
+│   │
+│   ├── data_warehouse/
+│   │   ├── snapshot/
+│   │   │   ├── equity/
+│   │   │   └── fx/
+│   │   └── validated/
+│   │       ├── equity/
+│   │       │   └── merged/
+│   │       └── macro/
+│   │
+│   └── data_mart/
+│       └── portfolio/
+
 ```
 
 ---

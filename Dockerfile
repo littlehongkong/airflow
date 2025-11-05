@@ -12,6 +12,5 @@ RUN pip install --no-cache-dir \
     pandera \
     soda-core-duckdb \
     duckdb==1.0.0
-
 # 필요한 경우, Airflow 사용자(airflow)에게 권한을 다시 위임합니다.
 USER airflow

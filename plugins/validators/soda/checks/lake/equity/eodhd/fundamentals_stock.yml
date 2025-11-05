@@ -1,0 +1,10 @@
+checks for fundamentals:
+  - row_count > 0
+
+  - failed rows:
+      name: missing_code
+      fail condition: "General_Code IS NULL OR TRIM(General_Code) = ''"
+
+  - failed rows:
+      name: missing_type
+      fail condition: "General_Type IS NULL OR TRIM(General_Type) = ''"

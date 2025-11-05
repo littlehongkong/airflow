@@ -1,0 +1,23 @@
+{
+  "table_name": "equity_dividend",
+  "description": "주식 배당 데이터 (EODHD dividends API 기반)",
+  "columns": [
+    {"name": "code", "type": "String", "nullable": false},
+    {"name": "exchange", "type": "String", "nullable": false},
+    {"name": "date", "type": "DateTime", "nullable": false},
+    {"name": "dividend", "type": "Float", "nullable": false},
+    {"name": "currency", "type": "String", "nullable": true},
+    {"name": "declarationDate", "type": "DateTime", "nullable": true},
+    {"name": "recordDate", "type": "DateTime", "nullable": true},
+    {"name": "paymentDate", "type": "DateTime", "nullable": true},
+    {"name": "period", "type": "String", "nullable": true},
+    {"name": "unadjustedValue", "type": "Float", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["code", "date"],
+    "non_nullable": ["code", "date", "dividend", "unadjustedValue"],
+    "patterns": {
+      "currency": "^[A-Z]{3}$"
+    }
+  }
+}

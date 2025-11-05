@@ -1,0 +1,21 @@
+{
+  "table_name": "symbol_list",
+  "description": "거래소별 상장 종목 목록 (EODHD exchange-symbol-list API 기반)",
+  "columns": [
+    {"name": "Code", "type": "String", "nullable": false},
+    {"name": "Name", "type": "String", "nullable": true},
+    {"name": "Country", "type": "String", "nullable": true},
+    {"name": "Exchange", "type": "String", "nullable": true},
+    {"name": "Currency", "type": "String", "nullable": true},
+    {"name": "Type", "type": "String", "nullable": true},
+    {"name": "Isin", "type": "String", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["Code"],
+    "non_nullable": ["Name", "Code"],
+    "patterns": {
+      "Currency": "^[A-Z]{3}$"
+    }
+  }
+}
+

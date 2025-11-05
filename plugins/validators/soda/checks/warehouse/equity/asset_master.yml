@@ -1,0 +1,118 @@
+# ===================================================
+# 🧩 Warehouse Soda Checks — Asset Master
+# ===================================================
+
+checks for asset_master:
+
+  # ✅ 기본 데이터 존재 및 필수 컬럼 검증
+  - row_count > 0
+  - missing_percent(security_id) = 0
+  - missing_percent(ticker) = 0
+  - missing_percent(exchange_code) = 0
+  - missing_percent(country_code) = 0
+  - missing_percent(currency_code) = 0
+
+  # ✅ 고유성 및 키 무결성 검증
+  - duplicate_count(security_id) = 0
+  - duplicate_count(ticker) = 0
+
+  # ✅ Ticker 형식 검증 (대문자/숫자/.-_ 조합, 1~20자)
+  - failed rows:
+      name: invalid_ticker_format
+      samples limit: 5
+      fail condition: |
+        ticker IS NULL
+        OR ticker = ''
+        OR NOT REGEXP_MATCHES(ticker, '^[A-Z0-9._-]{1,20}$')
+
+  # ✅ Exchange Code 형식 검증 (대문자/숫자 조합, 1~10자)
+  - failed rows:
+      name: invalid_exchange_code_format
+      samples limit: 5
+      fail condition: |
+        exchange_code IS NULL
+        OR exchange_code = ''
+        OR NOT REGEXP_MATCHES(exchange_code, '^[A-Z0-9]{1,10}$')
+
+  # ✅ 국가코드 (ISO2) 형식 검증
+  - failed rows:
+      name: invalid_country_code_format
+      samples limit: 5
+      fail condition: |
+        country_code IS NULL
+        OR NOT REGEXP_MATCHES(country_code, '^[A-Z]{2}$')
+
+  # ✅ 통화 코드 (ISO4217, 3자리 대문자)
+  - failed rows:
+      name: invalid_currency_code_format
+      samples limit: 5
+      fail condition: |
+        currency_code IS NOT NULL
+        AND LOWER(TRIM(currency_code)) NOT IN ('unknown', 'null', '')
+        AND NOT REGEXP_MATCHES(currency_code, '^[A-Z]{3}$')
+
+  # ✅ ISIN 형식 검증 (2+9+1자리)
+  - failed rows:
+      name: invalid_isin_format
+      samples limit: 5
+      fail condition: |
+        isin IS NOT NULL
+        AND isin != ''
+        AND NOT REGEXP_MATCHES(isin, '^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
+
+  # ✅ CUSIP 형식 검증 (9자리 영문/숫자)
+  - failed rows:
+      name: invalid_cusip_format
+      samples limit: 5
+      fail condition: |
+        cusip IS NOT NULL
+        AND cusip != ''
+        AND NOT REGEXP_MATCHES(cusip, '^[A-Z0-9]{9}$')
+
+  # ✅ LEI 형식 검증 (20자리 영문/숫자)
+  - failed rows:
+      name: invalid_lei_format
+      samples limit: 5
+      fail condition: |
+        lei IS NOT NULL
+        AND lei != ''
+        AND NOT REGEXP_MATCHES(lei, '^[A-Z0-9]{20}$')
+
+  # ✅ 상장일 (IPO_DATE) 유효성 검증 (오늘보다 미래일자면 실패)
+  - failed rows:
+      name: invalid_ipo_date
+      samples limit: 5
+      fail condition: |
+        ipo_date IS NOT NULL
+        AND ipo_date > CURRENT_DATE
+
+  # ✅ 상폐 여부 필드 논리값 검증
+  - failed rows:
+      name: invalid_is_delisted_value
+      samples limit: 5
+      fail condition: |
+        is_delisted IS NOT NULL
+        AND LOWER(TRIM(CAST(is_delisted AS VARCHAR))) NOT IN ('true', 'false', '0', '1')
+
+  # ✅ Vendor / Snapshot 기준 검증
+  - missing_percent(source_vendor) = 0
+  - missing_percent(snapshot_date) = 0
+
+  # ✅ 최소 데이터 개수 (국가 단위 기준 100개 이상)
+  - row_count >= 100
+
+  # ✅ 펀더멘털 및 심볼 최신 기준일 필드 검증
+  - failed rows:
+      name: invalid_last_update_fields
+      samples limit: 5
+      fail condition: |
+        last_symbol_update IS NULL
+        OR last_fundamental_update IS NULL
+
+  # ✅ 빌드 기준일 (snapshot_date) 유효성
+  - failed rows:
+      name: invalid_snapshot_date
+      samples limit: 5
+      fail condition: |
+        snapshot_date IS NULL
+        OR snapshot_date > CURRENT_DATE

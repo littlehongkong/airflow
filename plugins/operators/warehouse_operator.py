@@ -31,6 +31,7 @@ class WarehouseOperator(BaseOperator):
         self.postgres_conn_id = postgres_conn_id
 
     def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+
         task_id = context["task_instance"].task_id
         dag_id = context["dag"].dag_id
 
@@ -40,12 +41,12 @@ class WarehouseOperator(BaseOperator):
             f"Pipeline={self.pipeline_cls.__name__}"
         )
 
-        rendered_kwargs = self.op_kwargs
-        self.log.info(f"📋 Pipeline kwargs: {rendered_kwargs}")
+        op_kwargs = self.op_kwargs
+        self.log.info(f"📋 Pipeline kwargs: {op_kwargs}")
 
         pipeline = None
         try:
-            pipeline = self.pipeline_cls(**rendered_kwargs)
+            pipeline = self.pipeline_cls(**op_kwargs)
 
             # ✅ build() 또는 validate() 자동 식별
             if hasattr(pipeline, "build"):
@@ -63,7 +64,7 @@ class WarehouseOperator(BaseOperator):
             result = run_and_log(
                 func=func,
                 context=context,
-                op_kwargs=rendered_kwargs,
+                op_kwargs=op_kwargs,
                 postgres_conn_id=self.postgres_conn_id,
                 dag_id=dag_id,
                 task_id=self.task_id,

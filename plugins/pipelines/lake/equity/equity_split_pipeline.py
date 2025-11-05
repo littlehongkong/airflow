@@ -10,8 +10,8 @@ class EquitySplitPipeline(BaseEquityPipeline):
     일일 주식분할(Split) 데이터 수집 및 저장
     """
 
-    def __init__(self, data_domain: str, exchange_code: str, trd_dt: str):
-        super().__init__(data_domain, exchange_code, trd_dt)
+    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str):
+        super().__init__(domain, exchange_code, trd_dt, domain_group=domain_group)
         self.hook = EODHDHook()
 
     def fetch(self, **kwargs):

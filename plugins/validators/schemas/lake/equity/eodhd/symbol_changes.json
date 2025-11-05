@@ -1,0 +1,14 @@
+{
+  "table_name": "symbol_changes",
+  "description": "종목 코드 변경 이력 (EODHD symbol-changes API 기반)",
+  "columns": [
+    {"name": "old_symbol", "type": "String", "nullable": false},
+    {"name": "new_symbol", "type": "String", "nullable": false},
+    {"name": "date", "type": "DateTime", "nullable": false},
+    {"name": "exchange_code", "type": "String", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["old_symbol", "new_symbol", "date"],
+    "non_nullable": ["old_symbol", "new_symbol", "date"]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "dataset": "asset_master",
+  "description": "국가 단위 자산 마스터 스냅샷 (symbol_list, fundamentals, exchange_list 병합 결과)",
+  "fields": [
+    {"name": "security_id", "type": "string", "description": "자체 생성 고유 ID (SEC-{country}-{hash})", "constraints": {"required": true, "unique": true, "primary_key": true}},
+    {"name": "ticker", "type": "string", "description": "종목코드 (EODHD Code)", "constraints": {"required": true}},
+    {"name": "security_name", "type": "string", "description": "종목명"},
+    {"name": "exchange_code", "type": "string", "description": "거래소 코드 (KRX, NASDAQ 등)", "constraints": {"required": true}},
+    {"name": "country_code", "type": "string", "description": "국가 코드 (ISO2)", "constraints": {"required": true, "pattern": "^[A-Z]{2}$"}},
+    {"name": "security_type", "type": "string", "description": "주식 유형 (Common Stock, ETF 등)"},
+    {"name": "isin", "type": "string", "description": "국제증권식별번호"},
+    {"name": "cusip", "type": "string", "description": "미국증권식별번호"},
+    {"name": "lei", "type": "string", "description": "법인식별번호"},
+    {"name": "sector", "type": "string", "description": "산업군 (EODHD Sector)"},
+    {"name": "industry", "type": "string", "description": "산업분류"},
+    {"name": "gic_sector", "type": "string", "description": "GICS Sector"},
+    {"name": "gic_group", "type": "string", "description": "GICS Group"},
+    {"name": "gic_industry", "type": "string", "description": "GICS Industry"},
+    {"name": "gic_sub_industry", "type": "string", "description": "GICS SubIndustry"},
+    {"name": "ipo_date", "type": "date", "description": "상장일"},
+    {"name": "is_delisted", "type": "boolean", "description": "상폐 여부"},
+    {"name": "currency_code", "type": "string", "description": "거래 통화 (USD, KRW 등)"},
+    {"name": "last_fundamental_update", "type": "date", "description": "펀더멘털 최신 스냅샷 기준일"},
+    {"name": "last_symbol_update", "type": "date", "description": "심볼리스트 기준일 ({{ ds }})"},
+    {"name": "ingested_at", "type": "timestamp", "description": "DW 반영 시각"},
+    {"name": "source_vendor", "type": "string", "description": "수집원 (EODHD)"},
+    {"name": "snapshot_date", "type": "date", "description": "DW 마스터 빌드 기준일 (예: 2025-10-24)"}
+  ],
+  "metadata": {
+    "owner": "data_engineering_team",
+    "layer": "warehouse",
+    "update_policy": "overwrite",
+    "retention": "12_months",
+    "version_control": true
+  }
+}
