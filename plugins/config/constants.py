@@ -1,23 +1,91 @@
 from pathlib import Path
 import os
 
-# ==============================================
-# 📂 기본 경로 설정
-# ==============================================
+# ===========================================================
+# 📂 DATA ROOTS (기본 로컬 데이터 루트)
+# ===========================================================
 DEFAULT_LOCAL_ROOT = Path(os.getenv("DATA_ROOT_PATH", "/opt/airflow/data"))
-DATA_LAKE_ROOT = DEFAULT_LOCAL_ROOT / "data_lake"
-DATA_WAREHOUSE_ROOT = DEFAULT_LOCAL_ROOT / "data_warehouse"
 
+# ✅ 레이어별 데이터 루트
+DATA_LAKE_ROOT       = DEFAULT_LOCAL_ROOT / "data_lake"
+DATA_WAREHOUSE_ROOT  = DEFAULT_LOCAL_ROOT / "data_warehouse"
+# DATA_MART_ROOT       = DEFAULT_LOCAL_ROOT / "data_mart"
 
-# ✅ 스키마 / 메타데이터 / 규칙 정의 경로
-CONFIG_ROOT = Path(__file__).resolve().parent
-SCHEMA_DIR = CONFIG_ROOT / "warehouse_schemas"
+# ===========================================================
+# 🧭 Warehouse Global Metadata
+# ===========================================================
+LATEST_SNAPSHOT_META_PATH = DATA_WAREHOUSE_ROOT / "latest_snapshot_meta.json"
+LATEST_SNAPSHOT_META_LOCK = DATA_WAREHOUSE_ROOT / "latest_snapshot_meta.lock"
+
+# ✅ 서브디렉터리 구조 예시
+# /data_lake/raw/equity/eodhd/
+# /data_lake/validated/equity/krx/
+# /data_warehouse/snapshot/equity/
+# /data_warehouse/validated/equity/merged/
+
+DATA_LAKE_RAW        = DATA_LAKE_ROOT / "raw"
+DATA_LAKE_VALIDATED  = DATA_LAKE_ROOT / "validated"
+DATA_WAREHOUSE_SNAPSHOT  = DATA_WAREHOUSE_ROOT / "snapshot"
+DATA_WAREHOUSE_VALIDATED = DATA_WAREHOUSE_ROOT / "validated"
+
+# ===========================================================
+# 🧩 VALIDATOR ROOT PATHS (PLUGINS 내 스키마/체크 정의)
+# ===========================================================
+# 예: /opt/airflow/plugins/validators/schemas/lake/equity/eodhd/prices.json
+#     /opt/airflow/plugins/validators/checks/lake/equity/eodhd/equity_price.yml
+
+VALIDATOR_ROOT          = Path("/opt/airflow/plugins/validators")
+
+# ✅ 공통 루트
+VALIDATOR_SCHEMA_ROOT   = VALIDATOR_ROOT / "schemas"
+VALIDATOR_CHECKS_ROOT   = VALIDATOR_ROOT / "soda" /"checks"
+
+# ✅ 레이어 구분 (lake / warehouse / mart)
+VALIDATOR_SCHEMA_LAKE        = VALIDATOR_SCHEMA_ROOT / "lake"
+VALIDATOR_SCHEMA_WAREHOUSE   = VALIDATOR_SCHEMA_ROOT / "warehouse"
+# VALIDATOR_SCHEMA_MART        = VALIDATOR_SCHEMA_ROOT / "mart"
+
+VALIDATOR_CHECKS_LAKE        = VALIDATOR_CHECKS_ROOT / "lake"
+VALIDATOR_CHECKS_WAREHOUSE   = VALIDATOR_CHECKS_ROOT / "warehouse"
+# VALIDATOR_CHECKS_MART        = VALIDATOR_CHECKS_ROOT / "mart"
+
+# ===========================================================
+# 🌍 DOMAIN-BASED SUBDIRECTORY EXAMPLES (확장형)
+# ===========================================================
+# 예: lake/equity/eodhd, lake/equity/krx, lake/macro/fred ...
+
+# ✅ 상위 자산군 (데이터 그룹)
+DOMAIN_GROUPS = {
+    "equity": "equity",
+    "crypto": "crypto",
+    "fx": "fx",
+    "macro": "macro",
+    "news": "news",
+}
+
+# ===========================================================
+# 🧭 PATH HELPER FUNCTIONS
+# ===========================================================
+
+def get_schema_path(layer: str, domain: str, vendor: str, dataset_name: str) -> Path:
+    """
+    layer/domain/vendor/dataset_name.json 경로를 반환
+    예시: lake/equity/eodhd/prices.json
+    """
+    return VALIDATOR_SCHEMA_ROOT / layer / domain / vendor / f"{dataset_name}.json"
+
+def get_check_path(layer: str, domain: str, vendor: str, dataset_name: str) -> Path:
+    """
+    layer/domain/vendor/dataset_name.yml 경로를 반환
+    예시: lake/equity/eodhd/equity_price.yml
+    """
+    return VALIDATOR_CHECKS_ROOT / layer / domain / vendor / f"{dataset_name}.yml"
 
 # ==============================================
 # 🏷️ Vendors
 # ==============================================
 VENDORS = {
-    "EODHD": "eodhd",
+    "eodhd": "eodhd",
 }
 
 # ==============================================
@@ -36,9 +104,9 @@ DATA_DOMAINS = {
 }
 
 # ==============================================
-# 📊 Layers
+# 📊 Stages
 # ==============================================
-LAYERS = {
+Stages = {
     "raw": "raw",
     "validated": "validated",
     "staging": "staging",
@@ -50,7 +118,7 @@ LAYERS = {
 # 🌍 Exchange Codes
 # ==============================================
 EXCHANGES = {
-    "US": {"country": "USA", "vendor": VENDORS["EODHD"]},
+    "US": {"country": "USA", "vendor": VENDORS["eodhd"]},
 }
 
 # ==============================================
@@ -69,7 +137,7 @@ WAREHOUSE_DOMAINS = {
 # ==============================================
 WAREHOUSE_SOURCE_MAP = {
     "exchange": ["exchange_list", "exchange_holiday"],
-    "asset": ["symbol_list", "symbol_changes"],
+    "asset": ["symbol_list", "fundamentals", "exchange_list"],
     "price": ["prices", "splits", "dividends"],
     "fundamental": ["fundamentals", "corporate_actions"],
 }

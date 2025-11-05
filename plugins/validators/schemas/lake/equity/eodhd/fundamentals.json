@@ -1,0 +1,25 @@
+{
+  "table_name": "fundamentals",
+  "description": "기업 펀더멘털 데이터 (EODHD fundamentals API 기반)",
+  "columns": [
+    {"name": "symbol", "type": "String", "nullable": false},
+    {"name": "fiscal_year", "type": "Int", "nullable": false},
+    {"name": "period", "type": "String", "nullable": false},
+    {"name": "report_date", "type": "DateTime", "nullable": true},
+    {"name": "currency", "type": "String", "nullable": true},
+    {"name": "total_assets", "type": "Float", "nullable": true},
+    {"name": "total_liabilities", "type": "Float", "nullable": true},
+    {"name": "shareholders_equity", "type": "Float", "nullable": true},
+    {"name": "revenue", "type": "Float", "nullable": true},
+    {"name": "net_income", "type": "Float", "nullable": true},
+    {"name": "eps", "type": "Float", "nullable": true},
+    {"name": "book_value_per_share", "type": "Float", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["symbol", "fiscal_year", "period"],
+    "non_nullable": ["symbol", "fiscal_year", "period"],
+    "patterns": {
+      "currency": "^[A-Z]{3}$"
+    }
+  }
+}

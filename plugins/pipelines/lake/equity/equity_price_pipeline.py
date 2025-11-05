@@ -10,8 +10,8 @@ class EquityPricePipeline(BaseEquityPipeline):
     - BaseEquityPipeline.fetch_and_load() 공통화 구조 적용
     """
 
-    def __init__(self, data_domain: str, exchange_code: str, trd_dt: str):
-        super().__init__(data_domain=data_domain, exchange_code=exchange_code, trd_dt=trd_dt)
+    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str):
+        super().__init__(domain=domain, exchange_code=exchange_code, trd_dt=trd_dt, domain_group=domain_group)
         self.hook = EODHDHook()
 
 

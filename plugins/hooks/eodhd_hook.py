@@ -18,7 +18,7 @@ class EODHDHook(HttpHook):
         self.api_token = self.connection.extra_dejson.get("api_token")
 
         # ✅ Hook의 “현재 호출 맥락” 저장용
-        self.vendor = VENDORS["EODHD"]
+        self.vendor = VENDORS["eodhd"]
         self.endpoint = None
         self.params = None
 

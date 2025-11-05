@@ -1,0 +1,36 @@
+{
+  "table_name": "equity_price",
+  "description": "주식 일별 가격 데이터 (EODHD prices API 기반)",
+  "columns": [
+    {"name": "code", "type": "String", "nullable": false},
+    {"name": "name", "type": "String", "nullable": false},
+    {"name": "type", "type": "String", "nullable": false},
+    {"name": "exchange_short_name", "type": "String", "nullable": false},
+    {"name": "MarketCapitalization", "type": "Int", "nullable": true},
+    {"name": "Beta", "type": "Float", "nullable": true},
+    {"name": "date", "type": "DateTime", "nullable": false},
+    {"name": "open", "type": "Float", "nullable": true},
+    {"name": "high", "type": "Float", "nullable": true},
+    {"name": "low", "type": "Float", "nullable": true},
+    {"name": "close", "type": "Float", "nullable": true},
+    {"name": "adjusted_close", "type": "Float", "nullable": true},
+    {"name": "ema_50d", "type": "Float", "nullable": true},
+    {"name": "ema_200d", "type": "Float", "nullable": true},
+    {"name": "hi_250d", "type": "Float", "nullable": true},
+    {"name": "lo_250d", "type": "Float", "nullable": true},
+    {"name": "avgvol_14d", "type": "Float", "nullable": true},
+    {"name": "avgvol_50d", "type": "Float", "nullable": true},
+    {"name": "avgvol_200d", "type": "Float", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["code", "date"],
+    "non_nullable": ["code", "date", "name", "type"],
+    "ranges": {
+      "open": [0, null],
+      "close": [0, null],
+      "high": [0, null],
+      "low": [0, null],
+      "volume": [0, null]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "table_name": "equity_split",
+  "description": "주식 액면분할 및 병합 데이터 (EODHD splits API 기반)",
+  "columns": [
+    {"name": "code", "type": "String", "nullable": false},
+    {"name": "exchange", "type": "String", "nullable": true},
+    {"name": "date", "type": "DateTime", "nullable": false},
+    {"name": "split", "type": "Float", "nullable": false}
+  ],
+  "constraints": {
+    "unique": ["code", "date"],
+    "non_nullable": ["code", "date", "split"]
+  }
+}

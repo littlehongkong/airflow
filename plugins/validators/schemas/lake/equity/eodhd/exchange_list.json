@@ -1,0 +1,23 @@
+{
+  "table_name": "exchange_list",
+  "description": "거래소 기본 정보 (EODHD exchanges-list API 기반)",
+  "columns": [
+    {"name": "Name", "type": "String", "nullable": false},
+    {"name": "Code", "type": "String", "nullable": false},
+    {"name": "OperatingMIC", "type": "String", "nullable": true},
+    {"name": "Country", "type": "String", "nullable": true},
+    {"name": "Currency", "type": "String", "nullable": true},
+    {"name": "CountryISO2", "type": "String", "nullable": true},
+    {"name": "CountryISO3", "type": "String", "nullable": true}
+  ],
+  "constraints": {
+    "unique": ["Code"],
+    "non_nullable": ["Name", "Code"],
+    "patterns": {
+      "CountryISO2": "^[A-Z]{2}$",
+      "CountryISO3": "^[A-Z]{3}$",
+      "Currency": "^[A-Z]{2,6}$"
+    }
+  }
+}
+
