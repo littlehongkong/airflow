@@ -4,11 +4,11 @@
   "columns": [
     {"name": "old_symbol", "type": "String", "nullable": false},
     {"name": "new_symbol", "type": "String", "nullable": false},
-    {"name": "date", "type": "DateTime", "nullable": false},
-    {"name": "exchange_code", "type": "String", "nullable": true}
+    {"name": "effective", "type": "DateTime", "nullable": false},
+    {"name": "exchange", "type": "String", "nullable": true}
   ],
   "constraints": {
-    "unique": ["old_symbol", "new_symbol", "date"],
-    "non_nullable": ["old_symbol", "new_symbol", "date"]
+    "unique": ["old_symbol", "new_symbol", "effective"],
+    "non_nullable": ["old_symbol", "new_symbol", "effective"]
   }
 }

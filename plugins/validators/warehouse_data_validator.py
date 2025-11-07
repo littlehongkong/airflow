@@ -19,22 +19,12 @@ class WarehouseDataValidator(BaseDataValidator):
     /opt/airflow/data/data_warehouse/equity/{domain}/snapshot/trd_dt={YYYY-MM-DD}/{domain}.parquet
     """
 
-    def __init__(self, domain: str, trd_dt: str, vendor: str = "eodhd", exchange_code: str = "ALL", domain_group: str = "equity",  **kwargs):
+    def __init__(self, domain: str, trd_dt: str, dataset_path: str, vendor: str = "eodhd", exchange_code: str = "ALL", domain_group: str = "equity", **kwargs):
         """
         - domain: 검증 대상 도메인 (예: exchange, fundamentals, price 등)
         - trd_dt: 검증 날짜
         - vendor: 데이터 벤더 (기본값: eodhd)
         """
-
-        # ✅ equity 중심 구조에 맞춘 dataset_path 설정
-        dataset_path = (
-                DATA_WAREHOUSE_ROOT
-                / "snapshot"
-                / domain_group
-                / domain
-                / f"trd_dt={trd_dt}"
-                / f"{domain}.parquet"
-        )
 
         super().__init__(
             domain=domain,

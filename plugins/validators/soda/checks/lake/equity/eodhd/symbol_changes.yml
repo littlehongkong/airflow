@@ -5,6 +5,10 @@ checks for symbol_changes:
   - missing_count(new_symbol) = 0
   - duplicate_count(old_symbol) = 0
   - failed rows:
+      name: identical_symbols
       fail condition: old_symbol = new_symbol
   - failed rows:
-      fail condition: NOT (CAST(effective AS VARCHAR) like '____-__-__')
+      name: invalid_effective_date
+      fail condition: |
+        effective IS NOT NULL
+        AND NOT REGEXP_MATCHES(CAST(effective AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2} ')

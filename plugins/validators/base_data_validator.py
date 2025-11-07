@@ -193,11 +193,13 @@ class BaseDataValidator:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         # ✅ Pandera 검증
+        self.log.info("Pandera 검증 시작")
         schema_path = self.schema_root / f"{self.domain}.json"
         if schema_path.exists():
             with open(schema_path, "r", encoding="utf-8") as f:
                 schema_def = json.load(f)
             checks["pandera_schema"] = self._validate_with_pandera(df, schema_def)
+            self.log.info(f"Pandera 검증 완료 : {checks['pandera_schema']}")
         else:
             print(f"⚠️ Pandera schema not found: {schema_path}")
 
@@ -242,6 +244,7 @@ class BaseDataValidator:
     # 4️⃣ Pandera Validation
     # -------------------------------------------------------------------------
     def _validate_with_pandera(self, df: pd.DataFrame, schema_def: dict) -> Dict[str, Any]:
+        # 1) 스키마 → pandera dtype 매핑
         type_map = {
             "String": pa.String,
             "Int": pa.Int,
@@ -252,38 +255,85 @@ class BaseDataValidator:
         }
 
         try:
+            # 2) 필수 컬럼 확인
             defined_cols = [c["name"] for c in schema_def.get("columns", [])]
             missing_cols = [c for c in defined_cols if c not in df.columns]
-
             if missing_cols:
                 raise ValueError(f"❌ Missing required columns in dataset: {missing_cols}")
 
+            # 3) 사전 정규화: 공백→NaN, 문자열 트림
+            for c in df.columns:
+                if df[c].dtype == object:
+                    df[c] = df[c].apply(lambda x: x.strip() if isinstance(x, str) else x)
+                    df[c] = df[c].replace({"": None})
+
+            # 4) 스키마 기반 타입 강제(coerce)
+            #    - 숫자/날짜가 문자열이어도 올바른 dtype으로 변환
+            for col_def in schema_def.get("columns", []):
+                name = col_def["name"]
+                typ = (col_def.get("type") or "String").lower()
+                if name not in df.columns:
+                    continue
+                try:
+                    if typ in ("float",):
+                        df[name] = pd.to_numeric(df[name], errors="coerce")
+                    elif typ in ("int",):
+                        df[name] = pd.to_numeric(df[name], errors="coerce").astype("Int64")
+                    elif typ in ("datetime", "datetime"):
+                        # 날짜는 표준 YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS 모두 허용
+                        df[name] = pd.to_datetime(df[name], errors="coerce", utc=False)
+                    elif typ in ("bool",):
+                        # "true"/"false"/1/0 등 문자열도 처리
+                        df[name] = df[name].astype(str).str.lower().map(
+                            {"true": True, "false": False, "1": True, "0": False}
+                        ).astype("boolean")
+                    else:
+                        df[name] = df[name].astype("string")
+                except Exception as e:
+                    self.log.warning(f"⚠️ Coercion failed for {name}({typ}): {e}")
+
+            # 5) pandera Column 정의 (nullable 반영)
             columns = {
-                c["name"]: Column(type_map.get(c["type"], pa.String), nullable=c.get("nullable", True))
+                c["name"]: Column(
+                    type_map.get(c["type"], pa.String),
+                    nullable=c.get("nullable", True),
+                    coerce=True,  # 컬럼 단위 coerce
+                )
                 for c in schema_def.get("columns", [])
             }
 
-            # Pandera 타입 검증
-            DataFrameSchema(columns).validate(df)
+            # 6) 스키마 검증 (스키마 레벨 coerce 추가)
+            schema = DataFrameSchema(columns, coerce=True)
+            schema.validate(df, lazy=True)
 
-            # 추가 constraints 체크
+            # 7) 추가 constraints (패턴/NOT NULL 등)
             cons = schema_def.get("constraints", {})
             if "patterns" in cons:
                 for col, pattern in cons["patterns"].items():
                     if col in df.columns:
-                        invalid = df[col].dropna().astype(str).apply(lambda x: not bool(re.match(pattern, x)))
-                        if invalid.any():
-                            raise ValueError(f"❌ Pattern mismatch in {col}: {df.loc[invalid, col].unique()[:5]}")
+                        invalid_mask = df[col].dropna().astype(str).str.match(pattern) == False
+                        if invalid_mask.any():
+                            bad = df.loc[invalid_mask, col].head(5).tolist()
+                            raise ValueError(f"❌ Pattern mismatch in '{col}': samples={bad}")
 
             if "non_nullable" in cons:
                 for col in cons["non_nullable"]:
                     if col in df.columns and df[col].isna().any():
-                        raise ValueError(f"❌ Null values found in non-nullable column: {col}")
+                        cnt = int(df[col].isna().sum())
+                        raise ValueError(f"❌ Null values found in non-nullable column '{col}' (rows={cnt})")
 
             return {"passed": True, "message": "Pandera schema validation passed"}
 
         except Exception as e:
-            self.log.error(str(e))
+            # 더 풍부한 디버깅 정보를 로그에 남김
+            self.log.error(f"[Pandera] {e}")
+            # 실패 컬럼 위주로 간단 프로파일
+            try:
+                debug_cols = [c["name"] for c in schema_def.get("columns", [])]
+                preview = df[debug_cols].head(3).to_dict(orient="records")
+                self.log.error(f"[Pandera] Sample rows: {preview}")
+            except Exception:
+                pass
             return {"passed": False, "message": str(e)}
 
     # -------------------------------------------------------------------------
@@ -295,7 +345,6 @@ class BaseDataValidator:
         db_path = None
         tmp_config_path = None
         scan = Scan()
-
         try:
 
             # 🔍 디버깅: DuckDB 등록 전 컬럼명 확인

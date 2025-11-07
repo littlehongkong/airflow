@@ -11,7 +11,10 @@ from typing import Dict, Any, Optional, List
 
 from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePipeline
 from plugins.config.constants import WAREHOUSE_DOMAINS, DOMAIN_GROUPS
-from plugins.utils.transform_utils import normalize_columns, safe_merge, ensure_columns
+from plugins.utils.transform_utils import normalize_columns, safe_merge
+
+from plugins.utils.loaders.exchange_loader import load_exchange_list
+from plugins.utils.loaders.exchange_holiday_loader import load_exchange_holiday_list
 
 
 class ExchangeMasterPipeline(BaseWarehousePipeline):
@@ -25,12 +28,12 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
     4️⃣ Pandera 스키마 기준 컬럼 정렬 및 저장
     """
 
-    def __init__(self, trd_dt: str, vendor_priority: Optional[List[str]] = None, **kwargs):
+    def __init__(self, trd_dt: str, vendor: str = None, **kwargs):
         super().__init__(
             domain=WAREHOUSE_DOMAINS["exchange"],
             domain_group=DOMAIN_GROUPS["equity"],
             trd_dt=trd_dt,
-            vendor_priority=vendor_priority,
+            vendor=vendor,
         )
         self.trigger_source = kwargs.get("trigger_source", None)  # ✅ 로그용으로 저장
 
@@ -197,13 +200,36 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         return final_df
 
 
+    def _load_source_datasets(self) -> dict[str, pd.DataFrame]:
+        """✅ Domain별 Loader를 직접 호출하는 명시적 버전"""
+
+
+        exchange_df = load_exchange_list(
+            domain_group=self.domain_group,
+            vendor=self.vendor,
+            trd_dt=self.trd_dt
+        )
+
+        exchange_holiday_df = load_exchange_holiday_list(
+            domain_group=self.domain_group,
+            vendor=self.vendor,
+            trd_dt=self.trd_dt
+        )
+
+
+        return {
+            "exchange_holiday": exchange_holiday_df,
+            "exchange_list": exchange_df
+        }
+
+
     # ============================================================
     # 📘 5️⃣ 전체 빌드 실행
     # ============================================================
     def build(self, **kwargs) -> Dict[str, Any]:
         self.log.info(f"🏗️ Building ExchangeMasterPipeline | snapshot_dt={self.trd_dt}")
 
-        sources = self._load_source_datasets(self.domain)
+        sources = self._load_source_datasets()
         exchange_df = sources.get("exchange_list")
         holiday_df = sources.get("exchange_holiday")
 
@@ -220,7 +246,7 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         meta = self.save_metadata(
             row_count=len(final_df),
             source_datasets=list(sources.keys()),
-            metrics={"vendor_priority": self.vendor_priority},
+            metrics={"vendor": self.vendor},
             context=kwargs.get("context"),
         )
 

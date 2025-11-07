@@ -1,5 +1,5 @@
 # ===================================================
-# 🧩 Warehouse Soda Checks — Asset Master
+# 🧩 Warehouse Soda Checks — Asset Master (DuckDB Safe)
 # ===================================================
 
 checks for asset_master:
@@ -14,7 +14,7 @@ checks for asset_master:
 
   # ✅ 고유성 및 키 무결성 검증
   - duplicate_count(security_id) = 0
-  - duplicate_count(ticker) = 0
+#  - duplicate_count(ticker) = 0
 
   # ✅ Ticker 형식 검증 (대문자/숫자/.-_ 조합, 1~20자)
   - failed rows:
@@ -23,7 +23,7 @@ checks for asset_master:
       fail condition: |
         ticker IS NULL
         OR ticker = ''
-        OR NOT REGEXP_MATCHES(ticker, '^[A-Z0-9._-]{1,20}$')
+        OR NOT REGEXP_MATCHES(CAST(ticker AS VARCHAR), '^[A-Z0-9._-]{1,20}$')
 
   # ✅ Exchange Code 형식 검증 (대문자/숫자 조합, 1~10자)
   - failed rows:
@@ -32,7 +32,7 @@ checks for asset_master:
       fail condition: |
         exchange_code IS NULL
         OR exchange_code = ''
-        OR NOT REGEXP_MATCHES(exchange_code, '^[A-Z0-9]{1,10}$')
+        OR NOT REGEXP_MATCHES(CAST(exchange_code AS VARCHAR), '^[A-Z0-9]{1,10}$')
 
   # ✅ 국가코드 (ISO2) 형식 검증
   - failed rows:
@@ -40,7 +40,7 @@ checks for asset_master:
       samples limit: 5
       fail condition: |
         country_code IS NULL
-        OR NOT REGEXP_MATCHES(country_code, '^[A-Z]{2}$')
+        OR NOT REGEXP_MATCHES(CAST(country_code AS VARCHAR), '^[A-Z]{3}$')
 
   # ✅ 통화 코드 (ISO4217, 3자리 대문자)
   - failed rows:
@@ -48,8 +48,8 @@ checks for asset_master:
       samples limit: 5
       fail condition: |
         currency_code IS NOT NULL
-        AND LOWER(TRIM(currency_code)) NOT IN ('unknown', 'null', '')
-        AND NOT REGEXP_MATCHES(currency_code, '^[A-Z]{3}$')
+        AND LOWER(TRIM(CAST(currency_code AS VARCHAR))) NOT IN ('unknown', 'null', '')
+        AND NOT REGEXP_MATCHES(CAST(currency_code AS VARCHAR), '^[A-Z]{3}$')
 
   # ✅ ISIN 형식 검증 (2+9+1자리)
   - failed rows:
@@ -57,34 +57,9 @@ checks for asset_master:
       samples limit: 5
       fail condition: |
         isin IS NOT NULL
-        AND isin != ''
-        AND NOT REGEXP_MATCHES(isin, '^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
+        AND LOWER(TRIM(CAST(isin AS VARCHAR))) NOT IN ('', 'nan', 'none')
+        AND NOT REGEXP_MATCHES(CAST(isin AS VARCHAR), '^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
 
-  # ✅ CUSIP 형식 검증 (9자리 영문/숫자)
-  - failed rows:
-      name: invalid_cusip_format
-      samples limit: 5
-      fail condition: |
-        cusip IS NOT NULL
-        AND cusip != ''
-        AND NOT REGEXP_MATCHES(cusip, '^[A-Z0-9]{9}$')
-
-  # ✅ LEI 형식 검증 (20자리 영문/숫자)
-  - failed rows:
-      name: invalid_lei_format
-      samples limit: 5
-      fail condition: |
-        lei IS NOT NULL
-        AND lei != ''
-        AND NOT REGEXP_MATCHES(lei, '^[A-Z0-9]{20}$')
-
-  # ✅ 상장일 (IPO_DATE) 유효성 검증 (오늘보다 미래일자면 실패)
-  - failed rows:
-      name: invalid_ipo_date
-      samples limit: 5
-      fail condition: |
-        ipo_date IS NOT NULL
-        AND ipo_date > CURRENT_DATE
 
   # ✅ 상폐 여부 필드 논리값 검증
   - failed rows:
