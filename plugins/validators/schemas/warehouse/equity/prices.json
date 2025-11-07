@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "dataset": "prices",
+  "description": "일자별 종목 가격 및 기술적 지표 스냅샷 (asset_master 연계형)",
+  "fields": [
+    {
+      "name": "security_id",
+      "type": "string",
+      "description": "asset_master 기반 전역 종목 식별자 (예: AST_KOR_KO_005930)",
+      "constraints": {"required": true, "primary_key": true}
+    },
+    {
+      "name": "ticker",
+      "type": "string",
+      "description": "종목코드 (로컬 기준)",
+      "constraints": {"required": true}
+    },
+    {
+      "name": "trd_dt",
+      "type": "date",
+      "description": "거래일자 (YYYY-MM-DD)",
+      "constraints": {"required": true}
+    },
+
+    {"name": "open", "type": "float", "description": "시가"},
+    {"name": "high", "type": "float", "description": "고가"},
+    {"name": "low", "type": "float", "description": "저가"},
+    {
+      "name": "close",
+      "type": "float",
+      "description": "종가",
+      "constraints": {"required": true}
+    },
+    {"name": "adjusted_close", "type": "float", "description": "수정종가 (배당/분할 반영)"},
+    {"name": "volume", "type": "float", "description": "거래량", "constraints": {"ge": 0}},
+
+    {"name": "market_cap", "type": "float", "description": "시가총액 (통화 단위는 asset_master 참조)", "constraints": {"ge": 0}},
+    {"name": "beta", "type": "float", "description": "베타계수"},
+
+    {"name": "ema_20d", "type": "float", "description": "20일 지수이동평균"},
+    {"name": "ema_50d", "type": "float", "description": "50일 지수이동평균"},
+    {"name": "ema_200d", "type": "float", "description": "200일 지수이동평균"},
+    {"name": "avgvol_14d", "type": "float", "description": "14일 평균 거래량"},
+    {"name": "avgvol_50d", "type": "float", "description": "50일 평균 거래량"},
+    {"name": "avgvol_200d", "type": "float", "description": "200일 평균 거래량"},
+    {"name": "hi_250d", "type": "float", "description": "최근 250일 최고가"},
+    {"name": "lo_250d", "type": "float", "description": "최근 250일 최저가"},
+
+    {"name": "created_at", "type": "timestamp", "description": "ETL 생성 시각"},
+    {"name": "updated_at", "type": "timestamp", "description": "마지막 업데이트 시각"},
+    {"name": "source_vendor", "type": "string", "description": "수집원 (예: EODHD)"},
+    {"name": "snapshot_date", "type": "date", "description": "DW 스냅샷 기준일 (예: 2025-11-06)"}
+  ],
+  "metadata": {
+    "owner": "data_engineering_team",
+    "layer": "warehouse",
+    "update_policy": "append",
+    "retention": "24_months",
+    "version_control": true
+  }
+}

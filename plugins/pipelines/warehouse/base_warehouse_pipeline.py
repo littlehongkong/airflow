@@ -5,13 +5,11 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Any
+from typing import Dict, Optional, Any
 from datetime import datetime, timezone
-from pathlib import Path
 
 from plugins.config.constants import (
-    DATA_LAKE_ROOT, DATA_WAREHOUSE_ROOT,
-    VENDORS, WAREHOUSE_SOURCE_MAP,
+    DATA_WAREHOUSE_ROOT,
     VALIDATOR_SCHEMA_WAREHOUSE
 )
 
@@ -33,14 +31,14 @@ class BaseWarehousePipeline(ABC):
             domain: str,
             domain_group: str,
             trd_dt: str,
-            vendor_priority: Optional[List[str]] = None,
+            vendor: str = None,
             country_code: Optional[str] = None,
     ):
         self.layer:str ='warehouse'
         self.domain = domain
         self.domain_group = domain_group
         self.trd_dt = trd_dt
-        self.vendor_priority = vendor_priority or [VENDORS.get("EODHD", "eodhd")]
+        self.vendor = vendor
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.country_code = country_code # 국가단위 파티셔닝에 사용
 
@@ -59,94 +57,11 @@ class BaseWarehousePipeline(ABC):
             self.conn = duckdb.connect(database=":memory:")
         return self.conn
 
-    def _load_source_datasets(self, warehouse_domain: str) -> Dict[str, pd.DataFrame]:
-        """
-        ✅ 국가별 다중 거래소 지원 Data Lake → Warehouse 데이터 로더
-        - self.exchanges를 기반으로 exchange_code 리스트 자동 조회
-        - exchange_list는 항상 exchange_code=ALL
-        - fundamentals는 JSON, 나머지는 Parquet
-        - union_by_name=True (스키마 불일치 허용)
-        """
-        source_map = WAREHOUSE_SOURCE_MAP.get(warehouse_domain)
-        if not source_map:
-            raise ValueError(f"❌ No source mapping defined for {warehouse_domain}")
 
-        # 공통 속성
-        trd_dt = getattr(self, "trd_dt", None)
-        domain_group = getattr(self, "domain_group", None)
-        vendor = getattr(self, "vendor", "eodhd")
-        country_code = getattr(self, "country_code", None)
-        conn = self._get_duckdb_connection()
-
-        if not all([trd_dt, domain_group, country_code]):
-            raise ValueError(
-                f"❌ Missing required parameters: trd_dt={trd_dt}, domain_group={domain_group}, country_code={country_code}")
-
-        # ✅ 국가별 거래소코드 리스트 로드
-        if not self.exchanges:
-            raise ValueError(f"❌ No exchange codes found for country={country_code} in self.exchanges")
-
-        self.log.info(f"🌍 {country_code} 거래소 목록: {self.exchanges}")
-
-        results: Dict[str, pd.DataFrame] = {}
-
-        for lake_domain in source_map:
-            dfs = []
-            # ✅ exchange_list는 ALL 고정
-            target_codes = ["ALL"] if lake_domain == "exchange_list" else self.exchanges
-
-            for ex_code in target_codes:
-                base_path = (
-                        Path(DATA_LAKE_ROOT)
-                        / "validated"
-                        / domain_group
-                        / lake_domain
-                        / f"vendor={vendor}"
-                        / f"exchange_code={ex_code}"
-                        / f"trd_dt={trd_dt}"
-                )
-
-                is_fundamentals = lake_domain == "fundamentals"
-                file_pattern = "*.json" if is_fundamentals else "*.parquet"
-
-                if not base_path.exists():
-                    self.log.warning(f"⚠️ Directory not found for {lake_domain}: {base_path}")
-                    continue
-
-                files = list(base_path.rglob(file_pattern))
-                if not files:
-                    self.log.warning(f"⚠️ No {file_pattern} files for {lake_domain} ({ex_code})")
-                    continue
-
-                try:
-                    if is_fundamentals:
-                        query = f"SELECT * FROM read_json_auto('{base_path / file_pattern}')"
-                    else:
-                        query = f"SELECT * FROM read_parquet('{base_path / file_pattern}', union_by_name=true)"
-
-                    df = conn.execute(query).df()
-
-                    if df.empty:
-                        self.log.warning(f"⚠️ {lake_domain} empty for exchange_code={ex_code}")
-                        continue
-
-                    df["exchange_code"] = ex_code
-                    dfs.append(df)
-
-                    self.log.info(
-                        f"📊 Loaded {len(df):,} rows | {lake_domain} | exchange_code={ex_code} | trd_dt={trd_dt}"
-                    )
-
-                except Exception as e:
-                    self.log.warning(f"⚠️ Failed to load {lake_domain} ({ex_code}): {e}")
-
-            # ✅ 여러 거래소 데이터를 하나로 병합
-            if dfs:
-                results[lake_domain] = pd.concat(dfs, ignore_index=True)
-            else:
-                raise FileNotFoundError(f"❌ No valid data found for {lake_domain}")
-
-        return results
+    @abstractmethod
+    def _load_source_datasets(self) -> dict[str, pd.DataFrame]:
+        """✅ Domain별 Loader를 직접 호출하는 명시적 버전"""
+        pass
 
     # -------------------------------------------------------------------------
     # 3️⃣ 스키마 로드 및 컬럼 순서 정렬
@@ -196,7 +111,7 @@ class BaseWarehousePipeline(ABC):
             if self.country_code:
                 output_dir = self.output_file.parent / f"country_code={self.country_code}"
                 output_dir.mkdir(parents=True, exist_ok=True)
-                self.output_file = output_dir / self.output_file.name  # 예: /asset/snapshot_dt=2025-11-05/country_code=US/asset.parquet
+                self.output_file = output_dir / self.output_file.name  # 예: /asset_master/snapshot_dt=2025-11-05/country_code=US/asset_master.parquet
 
             pq.write_table(table, self.output_file.as_posix())
 

@@ -5,10 +5,12 @@ from airflow.models import Variable
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from datetime import datetime
 import json
+
+from plugins.config.constants import DATA_DOMAINS, DOMAIN_GROUPS
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.fundamental_pipeline import FundamentalPipeline
 from plugins.validators.lake.equity.fundamental_data_validator import FundamentalDataValidator
-from plugins.utils.exchange_loader import load_exchanges_by_country
+from plugins.utils.loaders.exchange_loader import load_exchange_list
 from plugins.config import constants as C
 
 MASTER_COUNTRIES = json.loads(Variable.get("master_countries", default_var='["USA","KOR"]'))
@@ -30,10 +32,10 @@ with DAG(
     # -------------------------------------------------------------
     # 1️⃣ 거래소 코드 로드 (exchange_master 기반)
     # -------------------------------------------------------------
-    exchange_map = load_exchanges_by_country(MASTER_COUNTRIES)
+    exchange_df = load_exchange_list(domain_group=DOMAIN_GROUPS['equity'], vendor=C.VENDORS['eodhd'], trd_dt="{{ ds }}")
 
     # 예: {"KOR": ["KO", "KQ"], "USA": ["US"]}
-    exchanges = [ex for ex_list in exchange_map.values() for ex in ex_list]
+    exchanges = exchange_df[exchange_df['CountryISO3'].isin(MASTER_COUNTRIES)]['Code'].tolist()
 
     # -------------------------------------------------------------
     # 2️⃣ 거래소별 Task 생성 루프

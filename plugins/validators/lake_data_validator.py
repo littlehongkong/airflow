@@ -20,6 +20,7 @@ class LakeDataValidator(BaseDataValidator):
             vendor: str = None,
             exchange_code: str = None,
             domain_group: str | None = None,
+            allow_empty: bool = False,
             **kwargs,
     ):
         """
@@ -65,6 +66,7 @@ class LakeDataValidator(BaseDataValidator):
             dataset_path=dataset_path,
             exchange_code=exchange_code,
             vendor=vendor,
+            allow_empty=allow_empty,
             **kwargs,
         )
 

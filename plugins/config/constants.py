@@ -49,10 +49,24 @@ VALIDATOR_CHECKS_LAKE        = VALIDATOR_CHECKS_ROOT / "lake"
 VALIDATOR_CHECKS_WAREHOUSE   = VALIDATOR_CHECKS_ROOT / "warehouse"
 # VALIDATOR_CHECKS_MART        = VALIDATOR_CHECKS_ROOT / "mart"
 
+
+# ------------------------------------------------------------------------
+# 🧩 Entity ID 매핑 파일 (보조 캐시)
+# ------------------------------------------------------------------------
+DATA_META_ROOT = DEFAULT_LOCAL_ROOT / "meta"
+SECURITY_ID_MAP_FILE = DATA_META_ROOT / "security_id_map.json"
+SECURITY_ID_MAP_LOCK = DATA_META_ROOT / "security_id_map.lock"
+
 # ===========================================================
 # 🌍 DOMAIN-BASED SUBDIRECTORY EXAMPLES (확장형)
 # ===========================================================
 # 예: lake/equity/eodhd, lake/equity/krx, lake/macro/fred ...
+
+
+EXCLUDED_EXCHANGES_BY_COUNTRY = {
+    "USA": ['OTCQB', 'PINK', 'OTCQX', 'OTCMKTS', 'NMFQS', 'NYSE MKT','OTCBB', 'OTCGREY', 'BATS', 'OTC',  'OTCMTKS','OTCCE' ],
+    "KOR": ["KONEX"]
+}
 
 # ✅ 상위 자산군 (데이터 그룹)
 DOMAIN_GROUPS = {
@@ -125,11 +139,11 @@ EXCHANGES = {
 # 🏗️ Warehouse Domains
 # ==============================================
 WAREHOUSE_DOMAINS = {
-    "exchange": "exchange",
-    "asset": "asset",
-    "price": "price",
-    "fundamental": "fundamental",
-    "holiday": "holiday",
+    "exchange": "exchange_master",
+    "asset": "asset_master",
+    "price": "price_master",
+    "fundamental": "fundamental_master",
+    "holiday": "holiday_master",
 }
 
 # ==============================================
@@ -137,7 +151,7 @@ WAREHOUSE_DOMAINS = {
 # ==============================================
 WAREHOUSE_SOURCE_MAP = {
     "exchange": ["exchange_list", "exchange_holiday"],
-    "asset": ["symbol_list", "fundamentals", "exchange_list"],
+    "asset_master": ["symbol_list", "exchange_list"],
     "price": ["prices", "splits", "dividends"],
     "fundamental": ["fundamentals", "corporate_actions"],
 }
@@ -168,4 +182,4 @@ def get_layer_path(layer: str, domain: str) -> Path:
 # ==============================================
 # 🧱 Deprecated (호환성 유지)
 # ==============================================
-MASTER_DOMAIN = "asset"
+MASTER_DOMAIN = "asset_master"

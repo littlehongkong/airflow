@@ -1,20 +1,24 @@
 {
   "table_name": "exchange_holiday",
-  "description": "거래소 휴장일 정보 (EODHD exchange-holidays API 기반)",
+  "description": "거래소 상세정보 (ExchangeHolidays 포함, flatten 아님)",
   "columns": [
-    {"name": "holiday_name", "type": "String", "nullable": false},
-    {"name": "date", "type": "DateTime", "nullable": false},
-    {"name": "type", "type": "String", "nullable": true},
-    {"name": "exchange_code", "type": "String", "nullable": false},
-    {"name": "is_open", "type": "Bool", "nullable": true},
-    {"name": "country", "type": "String", "nullable": true},
-    {"name": "timezone", "type": "String", "nullable": true}
+    {"name": "Name", "type": "String", "nullable": false, "description": "거래소명"},
+    {"name": "Code", "type": "String", "nullable": false, "description": "거래소 코드"},
+    {"name": "OperatingMIC", "type": "String", "nullable": true, "description": "운영 MIC"},
+    {"name": "Country", "type": "String", "nullable": true, "description": "국가명"},
+    {"name": "Currency", "type": "String", "nullable": true, "description": "거래 통화"},
+    {"name": "Timezone", "type": "String", "nullable": true, "description": "시간대"},
+    {"name": "isOpen", "type": "Bool", "nullable": true, "description": "현재 개장 여부"},
+    {"name": "ActiveTickers", "type": "Int", "nullable": true, "description": "활성 티커 수"},
+    {"name": "UpdatedTickers", "type": "Int", "nullable": true, "description": "업데이트된 티커 수"},
+    {"name": "TradingHours", "type": "String", "nullable": true, "description": "거래 시간 (JSON 문자열)"},
+    {"name": "ExchangeHolidays", "type": "String", "nullable": true, "description": "휴장일 정보 (JSON 문자열)"}
   ],
   "constraints": {
-    "unique": ["exchange_code", "date"],
-    "non_nullable": ["exchange_code", "holiday_name", "date"],
+    "unique": ["Code"],
+    "non_nullable": ["Code", "Name"],
     "patterns": {
-      "exchange_code": "^[A-Z0-9]{1,10}$"
+      "Code": "^[A-Z0-9]{1,10}$"
     }
   }
 }

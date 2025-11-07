@@ -6,7 +6,7 @@ from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOpe
 from airflow.sdk import TaskGroup
 from airflow.task.trigger_rule import TriggerRule
 
-from plugins.config.constants import DOMAIN_GROUPS
+from plugins.config.constants import DOMAIN_GROUPS, VENDORS
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.symbol_list_pipeline import SymbolListPipeline
 from plugins.pipelines.lake.equity.exchange_holiday_pipeline import ExchangeHolidayPipeline
@@ -101,7 +101,6 @@ def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
                 "trd_dt": "{{ ds }}",
                 "domain": C.DATA_DOMAINS["exchange_holiday"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "allow_empty": True,
                 "vendor": C.VENDORS["eodhd"],
             },
             dag=dag,
@@ -118,7 +117,7 @@ def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
 # =========================================================
 with DAG(
         dag_id="exchange_metadata_dag",
-        description="Collect & validate exchange metadata, then trigger asset master build",
+        description="Collect & validate exchange metadata, then trigger asset_master master build",
         start_date=datetime(2025, 10, 15),
         schedule="0 19 * * 0-4",  # 평일 KST 04시
         catchup=False,
@@ -150,7 +149,7 @@ with DAG(
                 task_id=f"trigger_asset_master_{country}",
                 trigger_dag_id="asset_master_dag",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                conf={"trigger_source": "symbol_list_validation", "country_code": country, "domain_group": DOMAIN_GROUPS['equity']},
+                conf={"trigger_source": "symbol_list_validation", "country_code": country, "domain_group": DOMAIN_GROUPS['equity'], "trd_dt": "{{ ds }}", "vendor": VENDORS['eodhd']},
                 reset_dag_run=True,
                 wait_for_completion=False,
                 dag=dag,

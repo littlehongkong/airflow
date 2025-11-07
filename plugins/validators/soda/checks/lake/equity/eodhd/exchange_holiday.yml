@@ -2,22 +2,25 @@ checks for exchange_holiday:
   # ✅ 데이터 존재
   - row_count > 0
 
-  # ✅ 필수 필드 누락 검증
-  - missing_count(exchange_code) = 0
-  - missing_count(holiday_name) = 0
-  - missing_count(date) = 0
+  # ✅ 필수 필드
+  - missing_count(Code) = 0
+  - missing_count(Name) = 0
 
-  # ✅ 날짜 형식 검증 (DuckDB는 TIMESTAMP → VARCHAR 캐스팅 필요)
-  - failed rows:
-      name: invalid_date_format
-      fail condition: |
-        NOT REGEXP_MATCHES(CAST(date AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+  # ✅ 선택 필드(국가, 통화, 시간대)는 일부 null 허용
+  - missing_percent(Country) < 100
+  - missing_percent(Currency) < 100
+  - missing_percent(Timezone) < 100
 
   # ✅ 거래소 코드 형식 검증
   - failed rows:
       name: invalid_exchange_code_format
       fail condition: |
-        NOT REGEXP_MATCHES(exchange_code, '^[A-Z0-9]{1,10}$')
+        NOT REGEXP_MATCHES(Code, '^[A-Z0-9]{1,10}$')
 
-  # ✅ 중복 검증
-  - duplicate_count(exchange_code, date) = 0
+  # ✅ JSON 구조 검증
+  - failed rows:
+      name: invalid_json_structure
+      fail condition: |
+        (ExchangeHolidays IS NOT NULL AND NOT REGEXP_MATCHES(CAST(ExchangeHolidays AS VARCHAR), '^{.*}$'))
+        OR
+        (TradingHours IS NOT NULL AND NOT REGEXP_MATCHES(CAST(TradingHours AS VARCHAR), '^{.*}$'))

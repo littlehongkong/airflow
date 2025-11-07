@@ -57,7 +57,7 @@ class BaseEquityPipeline(HookMixin, ABC):
         exchange_list, symbol_list 등 lake 전용 도메인을 warehouse 호환형으로 정규화
         예:
           exchange_list → exchange
-          symbol_list → asset
+          symbol_list → asset_master
         """
         for wh_domain, sources in C.WAREHOUSE_SOURCE_MAP.items():
             if domain in sources:

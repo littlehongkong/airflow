@@ -1,10 +1,11 @@
 from plugins.validators.base_data_validator import BaseDataValidator
 from plugins.config import constants as C
+from plugins.utils.name_utils import normalize_field_names   # ✅ 새 유틸 사용
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import pandas as pd, json, logging
 import gc
-
+import shutil
 import psutil, tracemalloc
 import traceback
 
@@ -57,6 +58,79 @@ class FundamentalDataValidator(BaseDataValidator):
         )
 
         self.log = logging.getLogger(__name__)
+
+
+    def _append_general_to_parquet(self, general_dict: Dict[str, Any]) -> None:
+        """
+        ✅ fundamentals General-only 정보를 거래소 단위 parquet에 append
+        - 파일명: fundamentals_general_{trd_dt}.parquet
+        - 위치: validated/fundamentals/exchange_code={exchange_code}/
+        """
+        try:
+
+            if not general_dict:
+                return
+
+            record = {
+                "exchange_code": self.exchange_code,
+                "ticker": general_dict.get("Code"),
+                "Name": general_dict.get("Name"),
+                "security_type": general_dict.get("Type"),
+                "Sector": general_dict.get("Sector"),
+                "Industry": general_dict.get("Industry"),
+                "country_code": general_dict.get("CountryISO"),
+                "CurrencyCode": general_dict.get("CurrencyCode"),
+                "GicSector": general_dict.get("GicSector"),
+                "GicGroup": general_dict.get("GicGroup"),
+                "GicIndustry": general_dict.get("GicIndustry"),
+                "GicSubIndustry": general_dict.get("GicSubIndustry"),
+                "IPODate": general_dict.get("IPODate"),
+                "IsDelisted": general_dict.get("IsDelisted"),
+                "isin": general_dict.get("ISIN"),
+                "cusip": general_dict.get("CUSIP"),
+                "lei": general_dict.get("LEI"),
+                "OpenFigi": general_dict.get("OpenFigi"),
+                'fiscal_year_end': general_dict.get("FiscalYearEnd"),
+                "PrimaryTicker": general_dict.get("PrimaryTicker"),
+                "cik": general_dict.get("CIK"),
+                "last_fundamental_update": general_dict.get("UpdatedAt"),
+                "logo_url": general_dict.get("LogoURL"),
+                "trd_dt": self.trd_dt,
+                "validated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            record = normalize_field_names(record)
+
+            df = pd.DataFrame([record])
+
+            general_output_dir = (
+                C.DATA_LAKE_VALIDATED
+                / self.domain_group
+                / "fundamentals"
+                / f"vendor={self.vendor}"
+                / f"exchange_code={self.exchange_code}"
+            )
+            general_output_dir.mkdir(parents=True, exist_ok=True)
+
+            parquet_path = general_output_dir / f"fundamentals_general_{self.trd_dt}.parquet"
+
+            if parquet_path.exists():
+                existing = pd.read_parquet(parquet_path)
+                merged = pd.concat([existing, df], ignore_index=True)
+                merged.drop_duplicates(subset=["ticker"], keep="last", inplace=True)
+                merged.to_parquet(parquet_path, index=False)
+            else:
+                df.to_parquet(parquet_path, index=False)
+
+            # 최신본 복사
+            latest_path = general_output_dir / "fundamentals_general_latest.parquet"
+            shutil.copyfile(parquet_path, latest_path)
+
+            self.log.debug(f"📦 General parquet updated: {parquet_path.name}")
+
+        except Exception as e:
+            self.log.warning(f"⚠️ General parquet append 실패: {e}")
+
 
     def _define_checks(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -176,6 +250,9 @@ class FundamentalDataValidator(BaseDataValidator):
                     validated_json_path = validated_dir / f"{f.stem}.json"
                     with open(validated_json_path, "w", encoding="utf-8") as out_f:
                         json.dump(full_data, out_f, ensure_ascii=False, indent=2)
+
+                    # ✅ General-only parquet append
+                    self._append_general_to_parquet(full_data.get("General", {}))
 
                 else:
                     total_failed += 1

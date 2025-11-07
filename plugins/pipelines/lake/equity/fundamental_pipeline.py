@@ -1,6 +1,5 @@
 # plugins/pipelines/fundamental_pipeline.py
 
-from typing import Dict, List
 import json
 from pathlib import Path
 from plugins.hooks.eodhd_hook import EODHDHook
@@ -36,8 +35,7 @@ class FundamentalPipeline(BaseEquityPipeline):
         - DAG에서 batch_symbols가 전달되면 해당 종목만 수집
         - 전달되지 않으면 symbol_list.parquet을 자동 로드하여 수집
         """
-        import pandas as pd
-        from plugins.utils.symbol_loader import load_symbols_from_datalake_pd
+        from plugins.utils.loaders.symbol_loader import load_symbols_from_datalake_pd
         from plugins.config import constants as C
 
         self.log.info(f"🚀 Fundamentals 파이프라인 시작 ({self.exchange_code}, {self.trd_dt})")
