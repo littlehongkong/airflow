@@ -14,8 +14,15 @@ DATA_WAREHOUSE_ROOT  = DEFAULT_LOCAL_ROOT / "data_warehouse"
 # ===========================================================
 # 🧭 Warehouse Global Metadata
 # ===========================================================
+
+# 📦 Warehouse Latest Snapshot Meta
+
 LATEST_SNAPSHOT_META_PATH = DATA_WAREHOUSE_ROOT / "latest_snapshot_meta.json"
 LATEST_SNAPSHOT_META_LOCK = DATA_WAREHOUSE_ROOT / "latest_snapshot_meta.lock"
+
+# 💧 Data Lake Latest Validated Meta
+LATEST_VALIDATED_META_PATH = DATA_LAKE_ROOT / "latest_validated_meta.json"
+LATEST_VALIDATED_META_LOCK = DATA_LAKE_ROOT / "latest_validated_meta.lock"
 
 # ✅ 서브디렉터리 구조 예시
 # /data_lake/raw/equity/eodhd/

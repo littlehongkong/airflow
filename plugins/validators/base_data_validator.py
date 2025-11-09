@@ -463,17 +463,25 @@ class BaseDataValidator:
     # -------------------------------------------------------------------------
     def _update_latest_snapshot_meta(self, domain: str, trd_dt: str, meta_file: str):
         """
-        ✅ 최신 스냅샷 메타파일 업데이트
+        ✅ 최신 메타파일 업데이트 (Lake / Warehouse 모두 지원)
         - backfill 고려: 기존 날짜보다 최신일 경우만 갱신
         - 여러 프로세스 접근 시 file lock으로 동시성 제어
         """
 
-        C.LATEST_SNAPSHOT_META_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(C.LATEST_SNAPSHOT_META_LOCK)):
-            # 기존 메타파일 로드
-            if C.LATEST_SNAPSHOT_META_PATH.exists():
+        # ✅ layer 구분: lake → LATEST_VALIDATED_META / warehouse → LATEST_SNAPSHOT_META
+        if getattr(self, "layer", "lake") == "lake":
+            meta_path = C.LATEST_VALIDATED_META_PATH
+            lock_path = C.LATEST_VALIDATED_META_LOCK
+        else:
+            meta_path = C.LATEST_SNAPSHOT_META_PATH
+            lock_path = C.LATEST_SNAPSHOT_META_LOCK
+
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with FileLock(str(lock_path)):
+            if meta_path.exists():
                 try:
-                    with open(C.LATEST_SNAPSHOT_META_PATH, "r", encoding="utf-8") as f:
+                    with open(meta_path, "r", encoding="utf-8") as f:
                         latest_meta = json.load(f)
                 except json.JSONDecodeError:
                     latest_meta = {}
@@ -483,14 +491,13 @@ class BaseDataValidator:
             prev_info = latest_meta.get(domain)
             prev_dt = prev_info.get("latest_trd_dt") if prev_info else None
 
-            # 이전 날짜보다 최신이면 갱신
             if (not prev_dt) or (trd_dt > prev_dt):
                 latest_meta[domain] = {
                     "latest_trd_dt": trd_dt,
                     "meta_file": meta_file
                 }
-                with open(C.LATEST_SNAPSHOT_META_PATH, "w", encoding="utf-8") as f:
+                with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(latest_meta, f, indent=2, ensure_ascii=False)
-                print(f"🧭 [UPDATED] latest_snapshot_meta: {domain} → {trd_dt}")
+                print(f"🧭 [UPDATED] latest_meta ({self.layer}): {domain} → {trd_dt}")
             else:
-                print(f"ℹ️ Skipped meta update for {domain} (existing={prev_dt}, new={trd_dt})")
+                print(f"ℹ️ Skipped meta update for {domain} ({self.layer}) (existing={prev_dt}, new={trd_dt})")
