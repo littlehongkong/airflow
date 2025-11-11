@@ -154,6 +154,10 @@ class BaseWarehousePipeline(ABC):
         - snapshot 레이어에 우선 저장
         - validated는 validator가 promote 시 생성
         """
+        if self.domain == "fundamentals":
+            # 하위 pipeline에서 직접 정의하므로 skip
+            return
+
         snapshot_root = (
                 DATA_WAREHOUSE_ROOT
                 / "snapshot"

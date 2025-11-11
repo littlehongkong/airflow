@@ -1,0 +1,30 @@
+checks for fundamentals_stock:
+  - missing_core_fields:
+      query: |
+        SELECT COUNT(*) AS missing
+        FROM fundamentals_stock
+        WHERE General_Code IS NULL
+          OR General_Exchange IS NULL
+          OR General_CurrencyCode IS NULL
+      fail condition: missing > 0
+
+  - invalid_marketcap:
+      query: |
+        SELECT COUNT(*) AS bad
+        FROM fundamentals_stock
+        WHERE Highlights_MarketCapitalization <= 0
+      fail condition: bad > 0
+
+  - inconsistent_financials:
+      query: |
+        SELECT COUNT(*) AS bad
+        FROM fundamentals_stock
+        WHERE Financials_Balance_Sheet_totalAssets < Financials_Income_Statement_totalRevenue
+      fail condition: bad > 0
+
+  - outdated_data:
+      query: |
+        SELECT COUNT(*) AS stale
+        FROM fundamentals_stock
+        WHERE General_UpdatedAt < date('now', '-180 day')
+      fail condition: stale > 0

@@ -1,0 +1,27 @@
+{
+  "columns": [
+    {"name": "General_Code", "type": "String", "nullable": false},
+    {"name": "General_Name", "type": "String", "nullable": true},
+    {"name": "General_Type", "type": "String", "nullable": false},
+    {"name": "General_Exchange", "type": "String", "nullable": false},
+    {"name": "General_CurrencyCode", "type": "String", "nullable": false},
+    {"name": "MutualFund_Data_Fund_Category", "type": "String", "nullable": true},
+    {"name": "MutualFund_Data_Prev_Close_Price", "type": "Float", "nullable": true},
+    {"name": "MutualFund_Data_Yield", "type": "Float", "nullable": true},
+    {"name": "MutualFund_Data_Portfolio_Net_Assets", "type": "Float", "nullable": true},
+    {"name": "MutualFund_Data_Expense_Ratio", "type": "Float", "nullable": true},
+    {"name": "MutualFund_Data_Morning_Star_Rating", "type": "Int", "nullable": true},
+    {"name": "General_UpdatedAt", "type": "Datetime", "nullable": false}
+  ],
+  "constraints": {
+    "patterns": {
+      "General_CurrencyCode": "^[A-Z]{3}$"
+    },
+    "non_nullable": [
+      "General_Code",
+      "General_Type",
+      "General_Exchange",
+      "General_CurrencyCode"
+    ]
+  }
+}
