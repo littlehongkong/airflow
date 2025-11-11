@@ -21,14 +21,14 @@ with DAG(
         task_id="fetch_exchange_list",
         pipeline_cls=ExchangeInfoPipeline,
         method_name="fetch_and_load",
-        op_kwargs={"domain": C.DATA_DOMAINS["exchange_list"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL', "domain_group": C.DOMAIN_GROUPS["equity"]},
+        op_kwargs={"domain": C.DATA_DOMAINS["exchange_list"], "trd_dt": "{{ data_interval_end | ds }}", 'exchange_code': 'ALL', "domain_group": C.DOMAIN_GROUPS["equity"]},
     )
 
     validate_exchange_list = LakeOperator(
         task_id="validate_exchange_list",
         pipeline_cls=LakeDataValidator,
         method_name="validate",
-        op_kwargs={"domain": C.DATA_DOMAINS["exchange_list"], "trd_dt": "{{ ds }}", 'exchange_code': 'ALL', "vendor": C.VENDORS["eodhd"], "domain_group": C.DOMAIN_GROUPS["equity"]},
+        op_kwargs={"domain": C.DATA_DOMAINS["exchange_list"], "trd_dt": "{{ data_interval_end | ds }}", 'exchange_code': 'ALL', "vendor": C.VENDORS["eodhd"], "domain_group": C.DOMAIN_GROUPS["equity"]},
     )
 
 

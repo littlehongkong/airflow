@@ -47,7 +47,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
                 "exchange_code": exchange_code,
                 "domain": C.DATA_DOMAINS["symbol_list"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
             },
             dag=dag,
         )
@@ -58,7 +58,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             method_name="validate",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": C.DATA_DOMAINS["symbol_list"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "allow_empty": False,
@@ -87,7 +87,7 @@ def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
                 "exchange_code": exchange_code,
                 "domain": C.DATA_DOMAINS["exchange_holiday"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
             },
             dag=dag,
         )
@@ -98,7 +98,7 @@ def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
             method_name="validate",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": C.DATA_DOMAINS["exchange_holiday"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "vendor": C.VENDORS["eodhd"],
@@ -119,7 +119,7 @@ with DAG(
         dag_id="exchange_metadata_dag",
         description="Collect & validate exchange metadata, then trigger asset_master master build",
         start_date=datetime(2025, 10, 15),
-        schedule="0 19 * * 0-4",  # 평일 KST 04시
+        schedule="0 19 * * 1-5",  # 평일 KST 04시
         catchup=False,
         max_active_runs=1,
         tags=["EODHD", "metadata", "exchange", "holiday"],
@@ -149,7 +149,7 @@ with DAG(
                 task_id=f"trigger_asset_master_{country}",
                 trigger_dag_id="asset_master_dag",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                conf={"trigger_source": "symbol_list_validation", "country_code": country, "domain_group": DOMAIN_GROUPS['equity'], "trd_dt": "{{ ds }}", "vendor": VENDORS['eodhd']},
+                conf={"trigger_source": "symbol_list_validation", "country_code": country, "domain_group": DOMAIN_GROUPS['equity'], "trd_dt": "{{ data_interval_end | ds }}", "vendor": VENDORS['eodhd']},
                 reset_dag_run=True,
                 wait_for_completion=False,
                 dag=dag,

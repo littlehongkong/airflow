@@ -2,12 +2,11 @@
   "version": "1.0",
   "dataset": "asset_master",
   "description": "국가 단위 자산 마스터 스냅샷 (symbol_list, fundamentals, exchange_list 병합 결과)",
-  "fields": [
+  "columns": [
     {"name": "security_id", "type": "string", "description": "자체 생성 고유 ID (SEC-{country}-{hash})", "constraints": {"required": true, "unique": true, "primary_key": true}},
     {"name": "ticker", "type": "string", "description": "종목코드 (EODHD Code)", "constraints": {"required": true}},
     {"name": "name", "type": "string", "description": "종목명"},
     {"name": "exchange_code", "type": "string", "description": "거래소 코드 (KRX, NASDAQ 등)", "constraints": {"required": true}},
-    {"name": "exchange_name", "type": "string", "description": "거래소 이름", "constraints": {"required": true}},
     {"name": "country_code", "type": "string", "description": "국가 코드 (ISO2)", "constraints": {"required": true, "pattern": "^[A-Z]{2}$"}},
     {"name": "security_type", "type": "string", "description": "주식 유형 (Common Stock, ETF 등)"},
     {"name": "isin", "type": "string", "description": "국제증권식별번호"},

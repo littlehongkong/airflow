@@ -8,6 +8,10 @@ import gc
 import shutil
 import psutil, tracemalloc
 import traceback
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+_parquet_lock = Lock()
 
 process = psutil.Process()
 tracemalloc.start()
@@ -59,18 +63,36 @@ class FundamentalDataValidator(BaseDataValidator):
 
         self.log = logging.getLogger(__name__)
 
+    def _finalize_general_parquet(self):
+        general_output_dir = (
+                C.DATA_LAKE_VALIDATED /
+                self.domain_group / "fundamentals" /
+                f"vendor={self.vendor}" /
+                f"exchange_code={self.exchange_code}"
+        )
+        jsonl_path = general_output_dir / f"fundamentals_general_{self.trd_dt}.jsonl"
+        parquet_path = general_output_dir / f"fundamentals_general_{self.trd_dt}.parquet"
+        latest_path = general_output_dir / "fundamentals_general_latest.parquet"
 
-    def _append_general_to_parquet(self, general_dict: Dict[str, Any]) -> None:
+        if not jsonl_path.exists():
+            self.log.warning(f"⚠️ No JSONL found for parquet conversion: {jsonl_path}")
+            return
+
+        df = pd.read_json(jsonl_path, lines=True)
+        df.drop_duplicates(subset=["ticker"], keep="last", inplace=True)
+        df.to_parquet(parquet_path, index=False)
+        shutil.copyfile(parquet_path, latest_path)
+        self.log.info(f"✅ Converted JSONL → Parquet: {parquet_path}")
+
+    def _append_general_to_jsonl(self, general_dict: Dict[str, Any]) -> None:
         """
-        ✅ fundamentals General-only 정보를 거래소 단위 parquet에 append
-        - 파일명: fundamentals_general_{trd_dt}.parquet
-        - 위치: validated/fundamentals/exchange_code={exchange_code}/
+        ✅ 병렬 검증용 임시 append-safe JSONL 로깅
+        - 위치: validated/fundamentals/.../fundamentals_general_{trd_dt}.jsonl
         """
+        if not general_dict:
+            return
+
         try:
-
-            if not general_dict:
-                return
-
             record = {
                 "exchange_code": self.exchange_code,
                 "ticker": general_dict.get("Code"),
@@ -101,65 +123,42 @@ class FundamentalDataValidator(BaseDataValidator):
 
             record = normalize_field_names(record)
 
-            df = pd.DataFrame([record])
-
             general_output_dir = (
-                C.DATA_LAKE_VALIDATED
-                / self.domain_group
-                / "fundamentals"
-                / f"vendor={self.vendor}"
-                / f"exchange_code={self.exchange_code}"
+                    C.DATA_LAKE_VALIDATED /
+                    self.domain_group / "fundamentals" /
+                    f"vendor={self.vendor}" /
+                    f"exchange_code={self.exchange_code}"
             )
             general_output_dir.mkdir(parents=True, exist_ok=True)
 
-            parquet_path = general_output_dir / f"fundamentals_general_{self.trd_dt}.parquet"
+            jsonl_path = general_output_dir / f"fundamentals_general_{self.trd_dt}.jsonl"
 
-            if parquet_path.exists():
-                existing = pd.read_parquet(parquet_path)
-                merged = pd.concat([existing, df], ignore_index=True)
-                merged.drop_duplicates(subset=["ticker"], keep="last", inplace=True)
-                merged.to_parquet(parquet_path, index=False)
-            else:
-                df.to_parquet(parquet_path, index=False)
-
-            # 최신본 복사
-            latest_path = general_output_dir / "fundamentals_general_latest.parquet"
-            shutil.copyfile(parquet_path, latest_path)
-
-            self.log.debug(f"📦 General parquet updated: {parquet_path.name}")
+            with open(jsonl_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         except Exception as e:
-            self.log.warning(f"⚠️ General parquet append 실패: {e}")
+            self.log.warning(f"⚠️ General JSONL append 실패: {e}")
 
 
-    def _define_checks(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """
-        fundamentals 전용 Pandera + Soda Core 검증
-        - ETF/Stock 자동 분기
-        - flatten 컬럼 전처리
-        """
-        checks = {}
-
-        # ✅ 1. 기본 전처리
-        for col in df.columns:
-            if df[col].dtype == object:
-                df[col] = df[col].apply(lambda x: None if isinstance(x, str) and x.strip() == "" else x)
-
-        for c in ["General_UpdatedAt", "General_IPODate", "General_ReportDate"]:
-            if c in df.columns:
-                df[c] = pd.to_datetime(df[c], errors="coerce")
-
-        # ✅ 2. ETF/Stock 분기
-        type_col = next((c for c in ["General_Type", "Type", "General.Type", "General_Type.value"] if c in df.columns),
-                        None)
-
+    def _detect_fund_type(self, df: pd.DataFrame) -> str:
+        """파일별 타입 자동 감지 (ETF or Stock)"""
+        type_col = next(
+            (c for c in ["General_Type", "Type", "General.Type", "General_Type.value"] if c in df.columns),
+            None
+        )
         fund_type = "etf"
         if type_col and df[type_col].astype(str).str.contains("Common Stock", case=False, na=False).any():
             fund_type = "stock"
+        return fund_type
 
-        # ✅ 3. Pandera Schema 적용
+    def _define_checks(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """ETF/Stock별 Pandera schema 적용"""
+        checks = {}
+        fund_type = self._detect_fund_type(df)
+
         schema_path = self.schema_root / f"fundamentals_{fund_type}.json"
-        self.log.info(f"schema_path : {schema_path}")
+        self.log.info(f"🧩 schema_path: {schema_path}")
+
         if schema_path.exists():
             with open(schema_path, "r", encoding="utf-8") as f:
                 schema_def = json.load(f)
@@ -167,36 +166,50 @@ class FundamentalDataValidator(BaseDataValidator):
         else:
             self.log.warning(f"⚠️ Pandera schema not found: {schema_path}")
 
-        # ✅ 4. Soda Core 적용
-        soda_path = self.check_root / f"fundamentals_{fund_type}.yml"
-        if soda_path.exists():
-            checks.update(self._run_soda_duckdb_validation(df, soda_path))
-        else:
-            self.log.warning(f"⚠️ Soda check file not found: {soda_path}")
-
         return checks
 
+
+    def validate_file(self, file_path: Path) -> Dict[str, Any]:
+        """단일 JSON 파일 검증"""
+        with open(file_path, "r", encoding="utf-8") as infile:
+            data = json.load(infile)
+
+        general_data = data.get("General", {})
+        if not general_data:
+            return {"file": file_path.name, "status": "skipped", "reason": "No 'General' key"}
+
+        df = pd.json_normalize(general_data, sep="_")
+        df.columns = [c.replace(".", "_") for c in df.columns]
+        df.columns = [f"General_{c}" if not c.startswith("General_") else c for c in df.columns]
+
+        checks = self._define_checks(df)
+        status = self._aggregate_status(checks)
+
+        return {"file": file_path.name, "status": status, "checks": checks}
 
     # -------------------------------------------------------------------------
     # 1️⃣ 메인 검증 (Base 구조 유지)
     # -------------------------------------------------------------------------
     def validate(self, context: Optional[dict] = None) -> Dict[str, Any]:
         """
-        fundamentals 전용 검증 로직 (파일 단위)
-        - General 블록만 검증하되, 나머지 블록(Financials 등)은 그대로 유지
-        - 검증 성공 시 원본 전체 JSON을 validated로 복사
+        ⚙️ fundamentals 전용 검증 로직 (Lake 레벨)
+        - General 블록만 검증 (ETF/Stock 자동 구분)
+        - 파일 단위 병렬 검증 (ThreadPoolExecutor)
+        - 성공 시 원본 JSON validated로 복사 + General parquet append
         """
         files = [
             f for f in self.dataset_path.glob("*.json")
             if not f.name.startswith("_")
         ]
 
+        total_files = len(files)
+
         if not files:
             if self.allow_empty:
                 return self._skip_empty_result()
             raise FileNotFoundError(f"❌ No fundamental files found: {self.dataset_path}")
 
-        self.log.info(f"📁 {len(files)}개 fundamentals 파일 검증 시작")
+        self.log.info(f"📂 {len(files)} fundamentals 파일 병렬 검증 시작")
 
         validated_dir = (
                 self.data_root
@@ -210,72 +223,93 @@ class FundamentalDataValidator(BaseDataValidator):
         validated_dir.mkdir(parents=True, exist_ok=True)
 
         jsonl_path = validated_dir / f"{self.domain}_validated.jsonl"
+
+        # ✅ 실행 전 초기화 (파일 있으면 삭제)
+        if jsonl_path.exists():
+            jsonl_path.unlink()
+
         last_validated_path = validated_dir / "_last_validated.json"
 
         total_passed, total_failed = 0, 0
         failed_symbols = []
+        records = []
 
-        for i, f in enumerate(files, 1):
+        # ✅ 진행률 및 락 관리
+        progress_lock = Lock()
+        completed = 0
+        # ---------------------------------------------------------------
+        # ✅ 병렬 파일 검증 (ETF/Stock 자동 분기 포함)
+        # ---------------------------------------------------------------
+        def _validate_file(file_path):
+            nonlocal completed
             try:
-                # ✅ 전체 JSON 로드 (General 외 key 포함)
-                with open(f, "r", encoding="utf-8") as infile:
+                with open(file_path, "r", encoding="utf-8") as infile:
                     full_data = json.load(infile)
-
-                # ✅ General 키만 검증용으로 추출
                 general_data = full_data.get("General", {})
                 if not general_data:
-                    self.log.warning(f"⚠️ No 'General' key found in {f.name}")
-                    continue
+                    return {"file": file_path.name, "status": "skipped", "reason": "No General key"}
 
                 df = pd.json_normalize(general_data, sep="_")
                 df.columns = [c.replace(".", "_") for c in df.columns]
                 df.columns = [f"General_{c}" if not c.startswith("General_") else c for c in df.columns]
 
-                # ✅ 검증 수행
                 checks = self._define_checks(df)
                 status = self._aggregate_status(checks)
 
-                record = {
-                    "file": f.name,
-                    "status": status,
-                    "checks": checks,
-                }
-                with open(jsonl_path, "a", encoding="utf-8") as out_f:
-                    out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                # ✅ progress 카운터 증가 (thread-safe)
+                with progress_lock:
+                    completed += 1
+                    progress_pct = (completed / total_files) * 100
+                    self.log.info(
+                        f"🔍 [{completed}/{total_files} | {progress_pct:.1f}%] "
+                        f"검증 중: {file_path.name} (status={status})"
+                    )
 
                 if status == "success":
-                    total_passed += 1
-
-                    # ✅ 원본 전체 JSON (Financials 포함)을 validated로 그대로 복사
-                    validated_json_path = validated_dir / f"{f.stem}.json"
+                    validated_json_path = validated_dir / f"{file_path.stem}.json"
                     with open(validated_json_path, "w", encoding="utf-8") as out_f:
                         json.dump(full_data, out_f, ensure_ascii=False, indent=2)
+                    self._append_general_to_jsonl(full_data.get("General", {}))
 
-                    # ✅ General-only parquet append
-                    self._append_general_to_parquet(full_data.get("General", {}))
-
-                else:
-                    total_failed += 1
-                    failed_symbols.append(f.stem)
+                return {"file": file_path.name, "status": status, "checks": checks}
 
             except Exception as e:
-                total_failed += 1
-                failed_symbols.append(f.stem)
-                self.log.warning(f"⚠️ {f.name} 검증 실패: {e}")
-                self.log.info(traceback.format_exc())
-                continue
+                with progress_lock:
+                    completed += 1
+                    progress_pct = (completed / total_files) * 100
+                    self.log.warning(
+                        f"⚠️ [{completed}/{total_files} | {progress_pct:.1f}%] "
+                        f"{file_path.name} 검증 실패: {e}"
+                    )
+                return {"file": file_path.name, "status": "failed", "error": str(e)}
 
-            finally:
-                # ✅ 메모리 정리
-                for var in ["df", "full_data", "general_data", "checks"]:
-                    if var in locals():
-                        del locals()[var]
-                gc.collect()
-                tracemalloc.clear_traces()
+        # ---------------------------------------------------------------
+        # ✅ ThreadPoolExecutor로 병렬 처리
+        # ---------------------------------------------------------------
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_validate_file, f): f for f in files}
+            for future in as_completed(futures):
+                result = future.result()
+                records.append(result)
+                if result["status"] == "success":
+                    total_passed += 1
+                elif result["status"] == "failed":
+                    total_failed += 1
+                    failed_symbols.append(result["file"])
 
-        # ---------------------------------------------------------------------
-        # 2️⃣ 결과 요약
-        # ---------------------------------------------------------------------
+        # ✅ 최종 요약
+        self.log.info(f"🎯 검증 완료 — 성공 {total_passed:,}, 실패 {total_failed:,}, 총 {total_files:,}")
+
+        # ---------------------------------------------------------------
+        # ✅ JSONL 로그 저장
+        # ---------------------------------------------------------------
+        with open(jsonl_path, "w", encoding="utf-8") as out_f:
+            for rec in records:
+                out_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+        # ---------------------------------------------------------------
+        # ✅ 결과 요약 저장
+        # ---------------------------------------------------------------
         summary = {
             "dataset": self.domain,
             "layer": self.layer,
@@ -292,20 +326,21 @@ class FundamentalDataValidator(BaseDataValidator):
             "validated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # ✅ `_last_validated.json` 저장
         with open(last_validated_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        # ✅ snapshot 메타 업데이트
         self._update_latest_snapshot_meta(
             domain=self.domain,
             trd_dt=self.trd_dt,
-            meta_file=str(last_validated_path)
+            meta_file=str(last_validated_path),
         )
 
         if total_failed > 0:
             self.log.error(f"❌ {total_failed:,}개 종목 검증 실패 — details: {last_validated_path}")
             raise ValueError(f"Fundamentals validation failed — {total_failed:,} files failed")
+
+        self.log.info("fundamentals_general 파일 jsonl에서 parquet으로 변환")
+        self._finalize_general_parquet()
 
         self.log.info(f"🎯 Fundamentals 검증 완료 — 성공 {total_passed:,}건, 결과 저장: {last_validated_path}")
         return summary

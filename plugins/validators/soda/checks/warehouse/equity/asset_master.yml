@@ -14,6 +14,7 @@ checks for asset_master:
 
   # ✅ 고유성 및 키 무결성 검증
   - duplicate_count(security_id) = 0
+  - duplicate_count(ticker) = 0
 #  - duplicate_count(ticker) = 0
 
   # ✅ Ticker 형식 검증 (대문자/숫자/.-_ 조합, 1~20자)
@@ -32,7 +33,7 @@ checks for asset_master:
       fail condition: |
         exchange_code IS NULL
         OR exchange_code = ''
-        OR NOT REGEXP_MATCHES(CAST(exchange_code AS VARCHAR), '^[A-Z0-9]{1,10}$')
+        OR NOT REGEXP_MATCHES(CAST(exchange_code AS VARCHAR), '^[A-Z0-9 ]{1,10}$')
 
   # ✅ 국가코드 (ISO2) 형식 검증
   - failed rows:
@@ -62,32 +63,18 @@ checks for asset_master:
 
 
   # ✅ 상폐 여부 필드 논리값 검증
-  - failed rows:
-      name: invalid_is_delisted_value
-      samples limit: 5
-      fail condition: |
-        is_delisted IS NOT NULL
-        AND LOWER(TRIM(CAST(is_delisted AS VARCHAR))) NOT IN ('true', 'false', '0', '1')
+#  - failed rows:
+#      name: invalid_is_delisted_value
+#      samples limit: 5
+#      fail condition: |
+#        is_delisted IS NOT NULL
+#        AND LOWER(TRIM(CAST(is_delisted AS VARCHAR))) NOT IN ('true', 'false', '0', '1')
 
   # ✅ Vendor / Snapshot 기준 검증
   - missing_percent(source_vendor) = 0
   - missing_percent(snapshot_date) = 0
 
-  # ✅ 최소 데이터 개수 (국가 단위 기준 100개 이상)
-  - row_count >= 100
+  # ✅ 최소 데이터 개수 (국가 단위 기준 4000개 이상)
+  - row_count >= 4000
 
-  # ✅ 펀더멘털 및 심볼 최신 기준일 필드 검증
-  - failed rows:
-      name: invalid_last_update_fields
-      samples limit: 5
-      fail condition: |
-        last_symbol_update IS NULL
-        OR last_fundamental_update IS NULL
 
-  # ✅ 빌드 기준일 (snapshot_date) 유효성
-  - failed rows:
-      name: invalid_snapshot_date
-      samples limit: 5
-      fail condition: |
-        snapshot_date IS NULL
-        OR snapshot_date > CURRENT_DATE

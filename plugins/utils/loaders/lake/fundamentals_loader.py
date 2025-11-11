@@ -71,7 +71,7 @@ def load_fundamentals_latest(domain_group: str, vendor: str, exchange_codes: lis
 
     if not dfs:
         log.warning("⚠️ No fundamentals_general_latest files found")
-        return pd.DataFrame()
+        raise FileNotFoundError("No valid fundamentals_general_latest data for exchanges={exchange_codes}")
 
     final_df = pd.concat(dfs, ignore_index=True)
     log.info(f"📊 Loaded {len(final_df):,} rows from fundamentals_general_latest")

@@ -10,7 +10,7 @@ from plugins.config.constants import DATA_DOMAINS, DOMAIN_GROUPS
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.fundamental_pipeline import FundamentalPipeline
 from plugins.validators.lake.equity.fundamental_data_validator import FundamentalDataValidator
-from plugins.utils.loaders.exchange_loader import load_exchange_list
+from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
 from plugins.config import constants as C
 
 MASTER_COUNTRIES = json.loads(Variable.get("master_countries", default_var='["USA","KOR"]'))
@@ -32,7 +32,7 @@ with DAG(
     # -------------------------------------------------------------
     # 1️⃣ 거래소 코드 로드 (exchange_master 기반)
     # -------------------------------------------------------------
-    exchange_df = load_exchange_list(domain_group=DOMAIN_GROUPS['equity'], vendor=C.VENDORS['eodhd'], trd_dt="{{ ds }}")
+    exchange_df = load_exchange_list(domain_group=DOMAIN_GROUPS['equity'], vendor=C.VENDORS['eodhd'], trd_dt="data_interval_end | ds")
 
     # 예: {"KOR": ["KO", "KQ"], "USA": ["US"]}
     exchanges = exchange_df[exchange_df['CountryISO3'].isin(MASTER_COUNTRIES)]['Code'].tolist()
@@ -71,7 +71,7 @@ with DAG(
                 "exchange_code": exchange_code,
                 "domain": C.DATA_DOMAINS["fundamentals"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "vendor": C.VENDORS["eodhd"],
             },
         )
@@ -84,7 +84,7 @@ with DAG(
                 "exchange_code": exchange_code,
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "vendor": C.VENDORS["eodhd"],
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
             },
             wait_for_completion=False,  # ✅ 비동기 실행 (Lake 완료 후 병렬 가능)
             reset_dag_run=True,

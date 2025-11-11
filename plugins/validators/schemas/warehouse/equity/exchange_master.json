@@ -1,7 +1,7 @@
 {
   "table_name": "exchange",
   "description": "거래소 기본 정보 마스터 테이블 (EODHD 기반)",
-    "columns": [
+  "columns": [
     {"name": "country_code", "type": "String", "nullable": false},
     {"name": "country_name", "type": "String", "nullable": true},
     {"name": "exchange_code", "type": "String", "nullable": false},

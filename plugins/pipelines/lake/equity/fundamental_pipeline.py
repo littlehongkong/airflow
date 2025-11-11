@@ -5,6 +5,9 @@ from pathlib import Path
 from plugins.hooks.eodhd_hook import EODHDHook
 from plugins.pipelines.base_equity_pipeline import BaseEquityPipeline
 from plugins.config.constants import DOMAIN_GROUPS
+from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
+from plugins.utils.loaders.lake.symbol_loader import load_symbol_list
+from plugins.config import constants as C
 
 
 class FundamentalPipeline(BaseEquityPipeline):
@@ -16,7 +19,7 @@ class FundamentalPipeline(BaseEquityPipeline):
     """
 
     def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str = None):
-        super().__init__(domain, exchange_code, trd_dt, domain_group=domain_group or DOMAIN_GROUPS.get(domain, "equity"))
+        super().__init__(domain, exchange_code, trd_dt, domain_group=domain_group)
         self.hook = EODHDHook()
 
 
@@ -35,14 +38,22 @@ class FundamentalPipeline(BaseEquityPipeline):
         - DAG에서 batch_symbols가 전달되면 해당 종목만 수집
         - 전달되지 않으면 symbol_list.parquet을 자동 로드하여 수집
         """
-        from plugins.utils.loaders.symbol_loader import load_symbols_from_datalake_pd
-        from plugins.config import constants as C
 
         self.log.info(f"🚀 Fundamentals 파이프라인 시작 ({self.exchange_code}, {self.trd_dt})")
 
         exchange_code = kwargs.get("exchange_code", self.exchange_code)
         self.exchange_code = exchange_code
         trd_dt = kwargs.get("trd_dt", self.trd_dt)
+
+        exchange_df = load_exchange_list(
+            domain_group=self.domain_group,
+            vendor=C.VENDORS['eodhd'],
+            trd_dt=self.trd_dt
+        )
+
+        filter_df = exchange_df[exchange_df['Code'] == self.exchange_code]
+        assert filter_df.empty is False, "국가코드를 찾지 못했습니다."
+        country_code = filter_df['CountryISO3'].values[0]
 
         # ----------------------------------------------------------------------
         # ✅ 1️⃣ 수집 대상 심볼 결정
@@ -55,11 +66,13 @@ class FundamentalPipeline(BaseEquityPipeline):
         else:
             self.log.info(f"📦 batch_symbols 미전달 → symbol_list.parquet 자동 로드")
             try:
-                df = load_symbols_from_datalake_pd(
-                    exchange_code=exchange_code,
+                df = load_symbol_list(
+                    exchange_codes=[exchange_code],
                     trd_dt=trd_dt,
                     vendor=C.VENDORS["eodhd"],
                     domain_group=C.DOMAIN_GROUPS["equity"],
+                    exclude_field="Exchange",
+                    exclude_values=C.EXCLUDED_EXCHANGES_BY_COUNTRY[country_code]
                 )
                 symbols_to_process = df["Code"].dropna().astype(str).str.upper().unique().tolist()
                 self.log.info(f"📊 {exchange_code} 거래소에서 {len(symbols_to_process):,}개 종목 로드 완료")
