@@ -1,7 +1,10 @@
 from airflow import DAG
+from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from datetime import datetime
+
+from plugins.config.constants import VENDORS
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.equity_price_pipeline import EquityPricePipeline
 from plugins.validators.lake_data_validator import LakeDataValidator
@@ -30,7 +33,7 @@ with DAG(
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": "{{ params.exchange_code }}",
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": "{{ params.domain }}",
                 "domain_group": C.DOMAIN_GROUPS["equity"]
             },
@@ -47,7 +50,7 @@ with DAG(
             method_name="validate",
             op_kwargs={
                 "exchange_code": "{{ params.exchange_code }}",
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": "{{ params.domain }}",
                 "allow_empty": True,
                 "vendor": C.VENDORS["eodhd"],
@@ -65,7 +68,7 @@ with DAG(
             trigger_dag_id="corporate_actions_dag",
             conf={
                 "exchange_code": exchange_code,
-                "trd_dt": "{{ ds }}",
+                "trd_dt": "{{ data_interval_end | ds }}",
                 "triggered_by": "{{ dag.dag_id }}",
             },
             wait_for_completion=False,
@@ -75,8 +78,21 @@ with DAG(
         # DAG Dependency (각 거래소별 라인)
         start_task >> fetch_and_load >> validate_data >> trigger_corporate_actions
 
+    trigger_price_warehouse = TriggerDagRunOperator(
+        task_id=f"{exchange_code}_trigger_price_warehouse",
+        trigger_dag_id="price_warehouse_dag",
+        conf={
+            "country_code": "KOR",  # 🇰🇷 or "US", "JP" 등 다른 국가 가능
+            "trd_dt": "{{ data_interval_end | ds }}",
+            "triggered_by": "{{ dag.dag_id }}",
+            "vendor": VENDORS['eodhd']
+        },
+        wait_for_completion=False,
+        poke_interval=30,
+    )
+
     # ✅ 3️⃣ End marker
     end_task = EmptyOperator(task_id="end_pipeline")
 
     # ✅ 4️⃣ 모든 거래소 DAG 종료를 end_task로 집결
-    [trigger_corporate_actions] >> end_task
+    [trigger_corporate_actions] >> trigger_price_warehouse >> end_task

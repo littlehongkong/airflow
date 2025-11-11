@@ -5,7 +5,7 @@
     {"name": "code", "type": "String", "nullable": false},
     {"name": "exchange", "type": "String", "nullable": true},
     {"name": "date", "type": "DateTime", "nullable": false},
-    {"name": "split", "type": "Float", "nullable": false}
+    {"name": "split", "type": "String", "nullable": false}
   ],
   "constraints": {
     "unique": ["code", "date"],

@@ -9,8 +9,8 @@ from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 
 from plugins.config.constants import (
-    DATA_WAREHOUSE_ROOT,
-    VALIDATOR_SCHEMA_WAREHOUSE
+    DATA_WAREHOUSE_ROOT, VALIDATOR_SCHEMA_LAKE, VALIDATOR_CHECKS_LAKE, DATA_LAKE_ROOT,
+    VALIDATOR_SCHEMA_WAREHOUSE, VALIDATOR_CHECKS_WAREHOUSE
 )
 
 class BaseWarehousePipeline(ABC):
@@ -48,6 +48,18 @@ class BaseWarehousePipeline(ABC):
         self.conn = None  # duckdb 연결 객체
         self.exchanges: list = []
 
+        # ✅ constants 기반 경로 설정
+        if self.layer == "lake":
+            self.schema_root = VALIDATOR_SCHEMA_LAKE / domain_group / vendor.lower()
+            self.check_root = VALIDATOR_CHECKS_LAKE / domain_group / vendor.lower()
+            self.data_root = DATA_LAKE_ROOT
+
+        elif self.layer == "warehouse":
+            # ✅ equity 도메인 폴더를 포함하도록 수정
+            self.schema_root = VALIDATOR_SCHEMA_WAREHOUSE / domain_group
+            self.check_root = VALIDATOR_CHECKS_WAREHOUSE / domain_group
+            self.data_root = DATA_WAREHOUSE_ROOT
+
     # -------------------------------------------------------------------------
     # 2️⃣ 공통 데이터 로딩
     # -------------------------------------------------------------------------
@@ -68,7 +80,7 @@ class BaseWarehousePipeline(ABC):
     # -------------------------------------------------------------------------
     def _load_schema_definition(self) -> dict:
         """📘 warehouse_schemas 폴더에서 domain별 스키마 정의 JSON을 로드"""
-        schema_path = VALIDATOR_SCHEMA_WAREHOUSE / f"{self.domain}.json"
+        schema_path = self.schema_root / f"{self.domain}.json"
         if not schema_path.exists():
             self.log.warning(f"⚠️ Schema file not found for {self.domain}")
             return {}
@@ -104,6 +116,12 @@ class BaseWarehousePipeline(ABC):
             # 🔹 모든 object 타입 컬럼을 문자열로 변환
             for col in df.select_dtypes(include=["object"]).columns:
                 df[col] = df[col].astype(str)
+
+            string_cols = df.select_dtypes(include=["object", "string"]).columns
+            if len(string_cols) > 0:
+                df[string_cols] = df[string_cols].replace(
+                    ["None", "none", "NULL", "null", "NaN", "nan"], pd.NA
+                )
 
             table = pa.Table.from_pandas(df)
 
@@ -179,31 +197,6 @@ class BaseWarehousePipeline(ABC):
 
         self.log.info(f"🧾 Metadata saved → {meta_path.as_posix()}")
         return meta
-
-
-    def _reorder_columns(self, df, schema_name: str = None):
-        """
-        ✅ Pandera JSON 스키마 기준으로 컬럼 순서 정렬
-        모든 Warehouse 파이프라인에서 공통 사용
-        """
-        if not schema_name:
-            schema_name = f"{self.domain}_schema.json"
-
-        schema_path = VALIDATOR_SCHEMA_WAREHOUSE / schema_name
-        if not schema_path.exists():
-            self.log.warning(f"⚠️ 스키마 파일을 찾을 수 없습니다: {schema_path}")
-            return df
-
-        try:
-            schema = json.loads(schema_path.read_text())
-            preferred_order = [col["name"] for col in schema.get("columns", [])]
-            existing = [c for c in preferred_order if c in df.columns]
-            others = [c for c in df.columns if c not in existing]
-            ordered_df = df[existing + others]
-            return ordered_df
-        except Exception as e:
-            self.log.warning(f"⚠️ 컬럼 정렬 실패, 원본 순서 유지: {e}")
-            return df
 
     # -------------------------------------------------------------------------
     # 5️⃣ 추상 메서드 (하위 클래스 구현부)

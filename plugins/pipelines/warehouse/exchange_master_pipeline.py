@@ -13,8 +13,8 @@ from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePip
 from plugins.config.constants import WAREHOUSE_DOMAINS, DOMAIN_GROUPS
 from plugins.utils.transform_utils import normalize_columns, safe_merge
 
-from plugins.utils.loaders.exchange_loader import load_exchange_list
-from plugins.utils.loaders.exchange_holiday_loader import load_exchange_holiday_list
+from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
+from plugins.utils.loaders.lake.exchange_holiday_loader import load_exchange_holiday_list
 
 
 class ExchangeMasterPipeline(BaseWarehousePipeline):
@@ -210,11 +210,15 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
             trd_dt=self.trd_dt
         )
 
-        exchange_holiday_df = load_exchange_holiday_list(
-            domain_group=self.domain_group,
-            vendor=self.vendor,
-            trd_dt=self.trd_dt
-        )
+        exchanges = exchange_df[exchange_df['CountryISO3'] == self.country_code]['Code'].tolist()
+
+        for exchange_code in exchanges:
+            exchange_holiday_df = load_exchange_holiday_list(
+                domain_group=self.domain_group,
+                vendor=self.vendor,
+                trd_dt=self.trd_dt,
+                exchange_code=exchange_code
+            )
 
 
         return {

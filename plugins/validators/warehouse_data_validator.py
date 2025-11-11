@@ -9,6 +9,8 @@ WarehouseDataValidator
 from pathlib import Path
 from plugins.validators.base_data_validator import BaseDataValidator
 from plugins.config.constants import DATA_WAREHOUSE_ROOT
+import pandas as pd
+import json
 
 
 class WarehouseDataValidator(BaseDataValidator):
@@ -36,3 +38,43 @@ class WarehouseDataValidator(BaseDataValidator):
             exchange_code=exchange_code,
             **kwargs,
         )
+        self.country_code = kwargs.get("country_code")
+
+
+    def _save_result(self, result: dict, df: pd.DataFrame) -> Path:
+        """
+        ✅ Warehouse 전용 parquet 저장 경로
+        - data_warehouse/snapshot/equity/{domain}/trd_dt=YYYY-MM-DD/country_code=XXX/{domain}.parquet
+        """
+        snapshot_dir = (
+                Path(DATA_WAREHOUSE_ROOT)
+                / "snapshot"
+                / self.domain_group
+                / self.domain
+        )
+
+        if self.country_code:
+            snapshot_dir = snapshot_dir / f"country_code={self.country_code}" / f"trd_dt={self.trd_dt}"
+        else:
+            snapshot_dir = snapshot_dir / f"trd_dt={self.trd_dt}"
+
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        parquet_path = snapshot_dir / f"{self.domain}.parquet"
+        df.to_parquet(parquet_path, index=False)
+
+        self.log.info(f"✅ Parquet 저장 완료: {parquet_path} ({len(df):,}행)")
+
+        # 메타파일(_build_meta.json)도 같이 기록 (선택)
+        meta_info = {
+            "domain": self.domain,
+            "domain_group": self.domain_group,
+            "snapshot_dt": self.trd_dt,
+            "row_count": len(df),
+            "country_code": self.country_code,
+        }
+        meta_path = snapshot_dir / "_build_meta.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta_info, f, indent=2, ensure_ascii=False)
+
+        return parquet_path

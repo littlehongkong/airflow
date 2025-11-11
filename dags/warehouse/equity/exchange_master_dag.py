@@ -8,7 +8,7 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from plugins.operators.warehouse_operator import WarehouseOperator
 from plugins.pipelines.warehouse.exchange_master_pipeline import ExchangeMasterPipeline
 from plugins.validators.warehouse_data_validator import WarehouseDataValidator
-from plugins.config.constants import WAREHOUSE_DOMAINS, DOMAIN_GROUPS
+from plugins.config.constants import WAREHOUSE_DOMAINS, DOMAIN_GROUPS, VENDORS
 
 # 기본 설정
 default_args = {
@@ -36,7 +36,8 @@ with DAG(
         task_id="build_exchange_master",
         pipeline_cls=ExchangeMasterPipeline,
         op_kwargs={
-            "trd_dt": "{{ ds }}"
+            "trd_dt": "{{ data_interval_end | ds }}",
+            "vendor": VENDORS['eodhd']
         },
     )
 
@@ -47,7 +48,7 @@ with DAG(
         op_kwargs={
             "domain": WAREHOUSE_DOMAINS["exchange"],  # 예: "exchange_master"
             "domain_group": DOMAIN_GROUPS["equity"],
-            "trd_dt": "{{ ds }}",
+            "trd_dt": "{{ data_interval_end | ds }}",
         },
     )
 

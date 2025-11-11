@@ -1,5 +1,4 @@
 # plugins/utils/loaders/equity/price_loader.py
-from pathlib import Path
 import pandas as pd
 from plugins.config.constants import DATA_LAKE_VALIDATED
 from plugins.utils.loaders.base_loader import read_parquet_dir
@@ -23,6 +22,7 @@ def load_prices(domain_group: str, vendor: str, exchange_codes: list[str], trd_d
         try:
             df = read_parquet_dir(base_path)
             df["exchange_code"] = ex
+
             dfs.append(df)
         except FileNotFoundError:
             continue
