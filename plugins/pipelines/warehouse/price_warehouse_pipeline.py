@@ -102,7 +102,7 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
         df["source_vendor"] = self.vendor
         df["snapshot_date"] = pd.to_datetime(self.trd_dt).date()
         df["created_at"] = pd.Timestamp.utcnow()
-        df["updated_at"] = pd.Timestamp.utcnow()
+        # df["updated_at"] = pd.Timestamp.utcnow() # 필요없음. 새로 만들어서 적재하므로
 
         # 결측값/타입 정리
         df = df.fillna({"volume": 0, "market_cap": 0})
@@ -181,27 +181,11 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
         df = df.merge(
             master_df[join_keys + ["security_id"]],
             on=join_keys,
-            how="left"
+            how="inner"
         )
-
-        # ✅ 신규 ID 부여 (매핑 실패분)
-        missing_mask = df["security_id"].isna()
-        if missing_mask.any():
-            missing_df = df.loc[missing_mask, ["ticker"] + (["exchange_code"] if "exchange_code" in df else [])]
-            new_ids = [
-                generate_or_reuse_entity_id(
-                    prefix="AST",
-                    country=self.country_code,
-                    exchange=row.exchange_code if "exchange_code" in df else "",
-                    ticker=row.ticker,
-                )
-                for row in missing_df.itertuples(index=False)
-            ]
-            df.loc[missing_mask, "security_id"] = new_ids
 
         self.log.info(
             f"🔑 Assigned security_id for {len(df):,} rows "
-            f"(missing new={missing_mask.sum():,}, join_keys={join_keys})"
         )
         return df
 

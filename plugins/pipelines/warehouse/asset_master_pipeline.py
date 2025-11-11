@@ -325,7 +325,7 @@ class AssetMasterPipeline(BaseWarehousePipeline):
         merged["source_vendor"] = VENDORS.get("eodhd", "eodhd")
         ts = datetime.now(timezone.utc)
         merged["created_at"] = ts
-        merged["updated_at"] = ts
+        # merged["updated_at"] = ts
 
         # ✅ 이전 스냅샷 기반 security_id 재사용 + 이벤트 기록
         prev_master = self._load_prev_asset_master()

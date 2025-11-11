@@ -49,11 +49,6 @@
       "description": "ETL 생성 시각"
     },
     {
-      "name": "updated_at",
-      "type": "timestamp",
-      "description": "마지막 업데이트 시각"
-    },
-    {
       "name": "source_vendor",
       "type": "string",
       "description": "수집원 (예: EODHD)",
