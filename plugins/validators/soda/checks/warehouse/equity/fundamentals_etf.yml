@@ -1,0 +1,30 @@
+checks for fundamentals_etf:
+  - missing_core_fields:
+      query: |
+        SELECT COUNT(*) AS missing
+        FROM fundamentals_etf
+        WHERE General_Code IS NULL
+          OR General_CurrencyCode IS NULL
+          OR General_Exchange IS NULL
+      fail condition: missing > 0
+
+  - invalid_total_assets:
+      query: |
+        SELECT COUNT(*) AS bad
+        FROM fundamentals_etf
+        WHERE ETF_Data_TotalAssets <= 0
+      fail condition: bad > 0
+
+  - invalid_holdings_count:
+      query: |
+        SELECT COUNT(*) AS bad
+        FROM fundamentals_etf
+        WHERE Holdings_Count IS NULL OR Holdings_Count <= 0
+      fail condition: bad > 0
+
+  - missing_yield_or_return:
+      query: |
+        SELECT COUNT(*) AS missing
+        FROM fundamentals_etf
+        WHERE ETF_Data_Yield IS NULL AND Performance_Returns_1Y IS NULL
+      fail condition: missing > 0

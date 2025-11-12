@@ -1,0 +1,36 @@
+{
+  "columns": [
+    {"name": "General_Code", "type": "String", "nullable": false},
+    {"name": "General_Name", "type": "String", "nullable": true},
+    {"name": "General_Type", "type": "String", "nullable": false},
+    {"name": "General_Exchange", "type": "String", "nullable": false},
+    {"name": "General_CurrencyCode", "type": "String", "nullable": false},
+    {"name": "General_CountryISO", "type": "String", "nullable": false},
+    {"name": "ETF_Data_ISIN", "type": "String", "nullable": true},
+    {"name": "ETF_Data_Company_Name", "type": "String", "nullable": true},
+    {"name": "ETF_Data_Domicile", "type": "String", "nullable": true},
+    {"name": "ETF_Data_Yield", "type": "Float", "nullable": true},
+    {"name": "ETF_Data_TotalAssets", "type": "Float", "nullable": true},
+    {"name": "Market_Capitalisation_Mega", "type": "Float", "nullable": true},
+    {"name": "Market_Capitalisation_Big", "type": "Float", "nullable": true},
+    {"name": "Asset_Allocation_Stock_US_Long_%", "type": "Float", "nullable": true},
+    {"name": "World_Regions_North_America_Equity_%", "type": "Float", "nullable": true},
+    {"name": "Sector_Weights_Technology_Equity_%", "type": "Float", "nullable": true},
+    {"name": "Holdings_Count", "type": "Int", "nullable": true},
+    {"name": "Valuations_Growth_Valuations_Rates_Portfolio_Price/Book", "type": "Float", "nullable": true},
+    {"name": "Performance_Returns_1Y", "type": "Float", "nullable": true},
+    {"name": "Performance_Returns_YTD", "type": "Float", "nullable": true},
+    {"name": "General_UpdatedAt", "type": "Datetime", "nullable": false}
+  ],
+  "constraints": {
+    "patterns": {
+      "General_CurrencyCode": "^[A-Z]{3}$"
+    },
+    "non_nullable": [
+      "General_Code",
+      "General_Type",
+      "General_Exchange",
+      "General_CurrencyCode"
+    ]
+  }
+}

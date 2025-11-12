@@ -33,14 +33,15 @@ with DAG(
     # 1️⃣ 거래소 코드 로드 (exchange_master 기반)
     # -------------------------------------------------------------
     exchange_df = load_exchange_list(domain_group=DOMAIN_GROUPS['equity'], vendor=C.VENDORS['eodhd'], trd_dt="data_interval_end | ds")
-
-    # 예: {"KOR": ["KO", "KQ"], "USA": ["US"]}
-    exchanges = exchange_df[exchange_df['CountryISO3'].isin(MASTER_COUNTRIES)]['Code'].tolist()
+    exchange_df = exchange_df[exchange_df['CountryISO3'].isin(MASTER_COUNTRIES)]
+    exchange_to_country = dict(zip(exchange_df['Code'], exchange_df['CountryISO3']))
+    exchanges = list(exchange_to_country.keys())
 
     # -------------------------------------------------------------
     # 2️⃣ 거래소별 Task 생성 루프
     # -------------------------------------------------------------
     for exchange_code in exchanges:
+        country_code = exchange_to_country.get(exchange_code)
 
         # ✅ 펀더멘털 수집
         def _fetch_wrapper(exchange_code=exchange_code):
@@ -85,6 +86,7 @@ with DAG(
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "vendor": C.VENDORS["eodhd"],
                 "trd_dt": "{{ data_interval_end | ds }}",
+                "country_code": country_code
             },
             wait_for_completion=False,  # ✅ 비동기 실행 (Lake 완료 후 병렬 가능)
             reset_dag_run=True,

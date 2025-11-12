@@ -1,0 +1,39 @@
+{
+  "columns": [
+    {"name": "General_Code", "type": "String", "nullable": false},
+    {"name": "General_Name", "type": "String", "nullable": true},
+    {"name": "General_Type", "type": "String", "nullable": false},
+    {"name": "General_Exchange", "type": "String", "nullable": false},
+    {"name": "General_CurrencyCode", "type": "String", "nullable": false},
+    {"name": "General_CountryISO", "type": "String", "nullable": false},
+    {"name": "General_ISIN", "type": "String", "nullable": true},
+    {"name": "General_Sector", "type": "String", "nullable": true},
+    {"name": "General_Industry", "type": "String", "nullable": true},
+    {"name": "Highlights_MarketCapitalization", "type": "Float", "nullable": true},
+    {"name": "Highlights_EBITDA", "type": "Float", "nullable": true},
+    {"name": "Highlights_PERatio", "type": "Float", "nullable": true},
+    {"name": "Highlights_EarningsShare", "type": "Float", "nullable": true},
+    {"name": "Valuation_PriceBookMRQ", "type": "Float", "nullable": true},
+    {"name": "Valuation_EnterpriseValueEbitda", "type": "Float", "nullable": true},
+    {"name": "SharesStats_SharesOutstanding", "type": "Float", "nullable": true},
+    {"name": "Technicals_Beta", "type": "Float", "nullable": true},
+    {"name": "SplitsDividends_ForwardAnnualDividendYield", "type": "Float", "nullable": true},
+    {"name": "AnalystRatings_Rating", "type": "Float", "nullable": true},
+    {"name": "Financials_Balance_Sheet_totalAssets", "type": "Float", "nullable": true},
+    {"name": "Financials_Income_Statement_totalRevenue", "type": "Float", "nullable": true},
+    {"name": "Financials_Cash_Flow_totalCashFromOperatingActivities", "type": "Float", "nullable": true},
+    {"name": "General_UpdatedAt", "type": "Datetime", "nullable": false}
+  ],
+  "constraints": {
+    "patterns": {
+      "General_CurrencyCode": "^[A-Z]{3}$",
+      "General_CountryISO": "^[A-Z]{2}$"
+    },
+    "non_nullable": [
+      "General_Code",
+      "General_Exchange",
+      "General_CurrencyCode",
+      "General_CountryISO"
+    ]
+  }
+}

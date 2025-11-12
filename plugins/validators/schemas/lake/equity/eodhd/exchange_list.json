@@ -15,8 +15,7 @@
     "non_nullable": ["Name", "Code"],
     "patterns": {
       "CountryISO2": "^[A-Z]{2}$",
-      "CountryISO3": "^[A-Z]{3}$",
-      "Currency": "^[A-Z]{2,6}$"
+      "CountryISO3": "^[A-Z]{3}$"
     }
   }
 }

@@ -1,67 +1,73 @@
 """
-Airflow DAG: Fundamentals Warehouse Build (Ticker-Split Key Partition)
+Airflow DAG: Fundamentals Warehouse Build & Validation
 -----------------------------------------------------------------------
 💡 기능 요약
-- Data Lake에 있는 fundamentals JSON 파일을 읽어서
-  각 종목별 폴더(ticker=XXX)로 key별 parquet 파일로 저장
-- exchange_code, trd_dt 파티션 구조 유지
-- 후속 DAG(AssetMaster, Validation 등)에서 warehouse 데이터를 재활용
+1️⃣ Data Lake의 fundamentals JSON을 warehouse 구조로 재정리
+   - exchange_code / trd_dt 기준으로 ticker별(security_id별) 폴더 생성
+2️⃣ Warehouse-level 유효성 검증 수행
+   - Pandera + Soda Core 기반 검증 (type별: stock / etf / fund)
 """
 
 from airflow import DAG
-from datetime import datetime, timedelta
+from datetime import datetime
 from airflow.providers.standard.operators.empty import EmptyOperator
+from pathlib import Path
+
 from plugins.operators.warehouse_operator import WarehouseOperator
 from plugins.pipelines.warehouse.fundamentals_ticker_split_pipeline import FundamentalsTickerSplitPipeline
-from plugins.config.constants import DOMAIN_GROUPS, VENDORS
+from plugins.validators.warehouse.fundamentals_warehouse_validator import FundamentalsWarehouseValidator
+from plugins.config.constants import DATA_WAREHOUSE_ROOT, DOMAIN_GROUPS, VENDORS
 
-# 기본 설정
-default_args = {
-    "owner": "data_engineering",
-    "depends_on_past": False,
-    "email_on_failure": True,
-    "email_on_retry": False,
-    # "retries": 1,
-    # "retry_delay": timedelta(minutes=5),
-}
 
 with DAG(
     dag_id="fundamentals_warehouse_dag",
-    default_args=default_args,
-    schedule=None,  # 수동/Trigger 기반
     start_date=datetime(2025, 10, 1),
+    schedule=None,  # 수동/Trigger 기반
     catchup=False,
     tags=["warehouse", "fundamentals"],
 ) as dag:
 
+    # ------------------------------------------------------------------
+    # 🟩 Start
+    # ------------------------------------------------------------------
     start = EmptyOperator(task_id="start_pipeline")
 
-    # 1️⃣ Warehouse Build (Ticker-Split)
+    # ------------------------------------------------------------------
+    # 🏗️ 1️⃣ Fundamentals Warehouse Build (Ticker-Split)
+    # ------------------------------------------------------------------
     build_fundamentals = WarehouseOperator(
         task_id="build_fundamentals_ticker_split",
         pipeline_cls=FundamentalsTickerSplitPipeline,
         op_kwargs={
             "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
-            "vendor":  "{{ dag_run.conf.get('vendor', '') }}",
-            "exchange_code": "{{ dag_run.conf.get('exchange_code', '') }}",   # ✅ 국가별 거래소
+            "vendor": "{{ dag_run.conf.get('vendor', '') }}",
+            "exchange_code": "{{ dag_run.conf.get('exchange_code', '') }}",
             "trd_dt": "{{ dag_run.conf.get('trd_dt', '') }}",
-            "trigger_source": "{{ dag_run.conf.get('trigger_source', 'manual') }}"
+            "trigger_source": "{{ dag_run.conf.get('trigger_source', 'manual') }}",
+            "country_code": "{{ dag_run.conf.get('country_code', '') }}",
         },
     )
 
-    # (Optional) 2️⃣ Validation Task (General key only)
-    # 필요시 아래 주석 해제
-    # validate_fundamentals = WarehouseOperator(
-    #     task_id="validate_fundamentals_general",
-    #     pipeline_cls=WarehouseDataValidator,
-    #     op_kwargs={
-    #         "domain": "fundamentals_general",
-    #         "domain_group": DOMAIN_GROUPS["equity"],
-    #         "trd_dt": "{{ ds }}",
-    #     },
-    # )
+    # ------------------------------------------------------------------
+    # ✅ 2️⃣ Fundamentals Warehouse Validation (Pandera + Soda Core)
+    # ------------------------------------------------------------------
+    validate_fundamentals = WarehouseOperator(
+        task_id="validate_fundamentals_warehouse",
+        pipeline_cls=FundamentalsWarehouseValidator,  # ✅ 새 Validator 클래스
+        op_kwargs={
+            "trd_dt": "{{ dag_run.conf.get('trd_dt', '') }}",
+            "country_code": "{{ dag_run.conf.get('country_code', '') }}",
+            "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
+            "vendor": "{{ dag_run.conf.get('vendor', '') }}",
+            # ✅ dataset_path는 trd_dt 단위 snapshot 루트 지정
+            "allow_empty": True,
+        },
+    )
 
+    # ------------------------------------------------------------------
+    # 🟪 End
+    # ------------------------------------------------------------------
     end = EmptyOperator(task_id="end_pipeline")
 
-    # 실행 순서
-    start >> build_fundamentals >> end
+    # DAG 실행 순서
+    start >> build_fundamentals >> validate_fundamentals >> end

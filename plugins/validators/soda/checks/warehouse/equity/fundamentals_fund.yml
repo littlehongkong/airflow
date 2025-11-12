@@ -1,0 +1,31 @@
+checks for fundamentals_fund:
+  - missing_core_fields:
+      query: |
+        SELECT COUNT(*) AS missing
+        FROM fundamentals_fund
+        WHERE General_Code IS NULL
+          OR General_CurrencyCode IS NULL
+          OR General_Exchange IS NULL
+      fail condition: missing > 0
+
+  - invalid_expense_ratio:
+      query: |
+        SELECT COUNT(*) AS bad
+        FROM fundamentals_fund
+        WHERE MutualFund_Data_Expense_Ratio < 0 OR MutualFund_Data_Expense_Ratio > 10
+      fail condition: bad > 0
+
+  - missing_nav_or_assets:
+      query: |
+        SELECT COUNT(*) AS missing
+        FROM fundamentals_fund
+        WHERE MutualFund_Data_Prev_Close_Price IS NULL
+           OR MutualFund_Data_Portfolio_Net_Assets IS NULL
+      fail condition: missing > 0
+
+  - outdated_data:
+      query: |
+        SELECT COUNT(*) AS stale
+        FROM fundamentals_fund
+        WHERE General_UpdatedAt < date('now', '-180 day')
+      fail condition: stale > 0

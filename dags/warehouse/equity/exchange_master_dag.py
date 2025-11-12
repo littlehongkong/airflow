@@ -36,7 +36,7 @@ with DAG(
         task_id="build_exchange_master",
         pipeline_cls=ExchangeMasterPipeline,
         op_kwargs={
-            "trd_dt": "{{ data_interval_end | ds }}",
+            "trd_dt": "{{ dag_run.conf.get('trd_dt', None) }}",
             "vendor": VENDORS['eodhd']
         },
     )
@@ -46,9 +46,9 @@ with DAG(
         task_id="validate_exchange_master",
         pipeline_cls=WarehouseDataValidator,  # ✅ 단일 통합 Validator 사용
         op_kwargs={
-            "domain": WAREHOUSE_DOMAINS["exchange"],  # 예: "exchange_master"
+            "domain": "exchange",  # 예: "exchange_master"
             "domain_group": DOMAIN_GROUPS["equity"],
-            "trd_dt": "{{ data_interval_end | ds }}",
+            "trd_dt": "{{ dag_run.conf.get('trd_dt', None) }}",
         },
     )
 

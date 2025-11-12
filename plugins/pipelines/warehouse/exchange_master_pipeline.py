@@ -30,12 +30,13 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
 
     def __init__(self, trd_dt: str, vendor: str = None, **kwargs):
         super().__init__(
-            domain=WAREHOUSE_DOMAINS["exchange"],
+            domain="exchange",
             domain_group=DOMAIN_GROUPS["equity"],
             trd_dt=trd_dt,
             vendor=vendor,
         )
         self.trigger_source = kwargs.get("trigger_source", None)  # ✅ 로그용으로 저장
+        self.layer = "warehouse"
 
     # ============================================================
     # 📘 1️⃣ 거래소 리스트 정규화
@@ -49,6 +50,26 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         )
         if not code_col:
             raise ValueError("❌ 거래소 데이터에 code/exchange_code 컬럼이 없습니다.")
+
+        # 🔹 제거 대상 거래소 코드 목록
+        exclude_exchanges = [
+            "FOREX",
+            "CC",  # Cryptocurrencies
+            "MONEY",  # Money Market Virtual Exchange
+            "EUFUND",  # Europe Fund Virtual Exchange
+            "GBOND",  # Government Bonds
+        ]
+
+        # 🔹 실제 필터링
+        before = len(df)
+        df = df[~df["code"].str.upper().isin(exclude_exchanges)]
+        after = len(df)
+
+        removed_count = before - after
+        if removed_count > 0:
+            self.log.info(f"🚫 Excluded {removed_count:,} virtual exchanges: {exclude_exchanges}")
+        else:
+            self.log.info("✅ No excluded exchanges found")
 
         normalized = pd.DataFrame({
             "country_code": df.get("countryiso3", df.get("country_code", "")),
@@ -136,20 +157,18 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         거래소 + (축약된) 휴장일 통합 변환
         - 휴장일은 기준일(self.trd_dt) 이후 '가장 가까운 휴장일' 1건만 남겨서 join
         """
-        # 1) 거래소 정규화 & 중복 제거
-        normalized = self._normalize_exchange_list(exchange_list)
-        deduped = normalized.drop_duplicates(subset=["exchange_code"], keep="first")
+        # 1) 중복 제거
+        deduped = exchange_list.drop_duplicates(subset=["exchange_code"], keep="first")
 
         # 2) 휴장일 축약: 기준일 이후 첫 휴장일만 남김
         if exchange_holiday is not None and not exchange_holiday.empty:
-            holiday_df = self._normalize_exchange_holiday(exchange_holiday)
 
             # 기준일 파싱
             ref_dt = pd.to_datetime(self.trd_dt)
 
             # 기준일 이후(>=)만 필터
-            future_holidays = holiday_df.loc[
-                (holiday_df["holiday_date"].notna()) & (holiday_df["holiday_date"] >= ref_dt)
+            future_holidays = exchange_holiday.loc[
+                (exchange_holiday["holiday_date"].notna()) & (exchange_holiday["holiday_date"] >= ref_dt)
                 ].copy()
 
             # 가장 가까운 휴장일 1건/거래소
@@ -203,7 +222,6 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
     def _load_source_datasets(self) -> dict[str, pd.DataFrame]:
         """✅ Domain별 Loader를 직접 호출하는 명시적 버전"""
 
-
         exchange_df = load_exchange_list(
             domain_group=self.domain_group,
             vendor=self.vendor,
@@ -211,6 +229,7 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         )
 
         exchanges = exchange_df[exchange_df['CountryISO3'] == self.country_code]['Code'].tolist()
+        holiday_dfs = []
 
         for exchange_code in exchanges:
             exchange_holiday_df = load_exchange_holiday_list(
@@ -220,7 +239,20 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
                 exchange_code=exchange_code
             )
 
+            if exchange_holiday_df is not None and not exchange_holiday_df.empty:
+                # 각 거래소 코드 식별용 컬럼 추가 (선택)
+                exchange_holiday_df["exchange_code"] = exchange_code
+                holiday_dfs.append(exchange_holiday_df)
+            else:
+                self.log.warning(f"⚠️ No holiday data found for exchange_code={exchange_code}")
 
+        # ✅ 병합 처리 (빈 리스트 방어)
+        if holiday_dfs:
+            exchange_holiday_df = pd.concat(holiday_dfs, ignore_index=True)
+        else:
+            exchange_holiday_df = pd.DataFrame()
+
+        # ✅ 반환 구조
         return {
             "exchange_holiday": exchange_holiday_df,
             "exchange_list": exchange_df
@@ -233,6 +265,8 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
     def build(self, **kwargs) -> Dict[str, Any]:
         self.log.info(f"🏗️ Building ExchangeMasterPipeline | snapshot_dt={self.trd_dt}")
 
+        assert self.trd_dt is not None, f"trd_dt 값을 확인해주세요. trd_dt : {self.trd_dt}"
+
         sources = self._load_source_datasets()
         exchange_df = sources.get("exchange_list")
         holiday_df = sources.get("exchange_holiday")
@@ -240,9 +274,15 @@ class ExchangeMasterPipeline(BaseWarehousePipeline):
         if exchange_df is None or exchange_df.empty:
             raise FileNotFoundError("❌ exchange_list 데이터가 없습니다.")
 
+        self.log.info("필드 정규화 시작")
+        norm_exchange_df = self._normalize_exchange_list(df=exchange_df)
+        norm_holiday_df = self._normalize_exchange_holiday(holiday_df)
+        self.log.info("필드 정규화 종료")
+        self.log.info(norm_exchange_df.tail(5))
+
         final_df = self._transform_business_logic(
-            exchange_list=exchange_df,
-            exchange_holiday=holiday_df,
+            exchange_list=norm_exchange_df,
+            exchange_holiday=norm_holiday_df,
         )
 
         # ✅ 저장 + 메타 기록
