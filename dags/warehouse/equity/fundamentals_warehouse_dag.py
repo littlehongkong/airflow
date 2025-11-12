@@ -60,14 +60,6 @@ with DAG(
             "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
             "vendor": "{{ dag_run.conf.get('vendor', '') }}",
             # ✅ dataset_path는 trd_dt 단위 snapshot 루트 지정
-            "dataset_path": str(
-                Path(DATA_WAREHOUSE_ROOT)
-                / "snapshot"
-                / "{{ dag_run.conf.get('domain_group', '') }}"
-                / "fundamentals"
-                / "country_code={{ dag_run.conf.get('country_code', '') }}"
-                / "trd_dt={{ dag_run.conf.get('trd_dt', '') }}"
-            ),
             "allow_empty": True,
         },
     )

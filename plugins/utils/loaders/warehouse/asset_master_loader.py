@@ -6,14 +6,17 @@ import logging
 
 log = logging.getLogger(__name__)
 
-def load_asset_master_latest(domain_group: str = "equity") -> pd.DataFrame:
+def load_asset_master_latest(domain_group: str = "equity", country_code: str = None) -> pd.DataFrame:
     """
     ✅ 최신 asset_master 스냅샷 로드
     - 최신 trd_dt 파티션을 자동 탐색
     - security_id, ticker, exchange_code 중심의 매핑 반환
     - downstream 파이프라인(예: prices, fundamentals 등)에서 재사용 가능
     """
-    snapshot_dir = Path(DATA_WAREHOUSE_ROOT) / "snapshot" / domain_group / "asset_master"
+
+    assert country_code is not None, "🔴 country_code is required"
+
+    snapshot_dir = Path(DATA_WAREHOUSE_ROOT) / "snapshot" / domain_group / "asset_master" / f"country_code={country_code}"
 
     if not snapshot_dir.exists():
         log.warning(f"⚠️ asset_master snapshot directory not found: {snapshot_dir}")

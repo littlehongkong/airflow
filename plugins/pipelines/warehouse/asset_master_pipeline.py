@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import psutil, gc
 import hashlib
 from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePipeline
+from plugins.utils.duckdb_manager import DuckDBManager
 from plugins.config.constants import (
     WAREHOUSE_DOMAINS,
     EXCLUDED_EXCHANGES_BY_COUNTRY,
@@ -33,10 +34,11 @@ class AssetMasterPipeline(BaseWarehousePipeline):
 
     def __init__(self, trd_dt: str, domain_group: str, country_code: Optional[str] = None, vendor: str = None):
         super().__init__(
-            domain=WAREHOUSE_DOMAINS["asset"],
+            domain="asset",
             domain_group=domain_group,
             trd_dt=trd_dt,
             vendor=vendor,
+            country_code=country_code
         )
         self.country_code = country_code
         self.exchanges: List[str] = []
@@ -157,7 +159,7 @@ class AssetMasterPipeline(BaseWarehousePipeline):
             self.log.info(f"🚫 Excluded {before - after:,} symbols where exchange_code in {exclude_exchanges}")
 
         print('df_norm.columns:: ', df_norm.columns)
-        print('df_norm :: ', df_norm)
+        print('df_norm :: ', df_norm.head(5))
 
         return df_norm
 
@@ -374,93 +376,94 @@ class AssetMasterPipeline(BaseWarehousePipeline):
     # 📘 7️⃣ 전체 빌드 실행
     # ============================================================
     def build(self, **kwargs) -> Dict[str, Any]:
-        self.log.info(f"🏗️ Building AssetMasterPipeline | trd_dt={self.trd_dt}, country={self.country_code}")
-        self.exchanges = self._load_exchange_codes()
 
-        conn = self._get_duckdb_connection()
-        sources = self._load_source_datasets(self.exchanges)
-        symbol_df = self._normalize_symbol_list(sources["symbol_list"])
-        fundamental_df = self._normalize_fundamentals(sources["fundamentals"])
-        exchange_df = self._normalize_exchange_detail(sources["exchange_list"])
+        with DuckDBManager(self.domain) as conn:
 
-        if symbol_df.empty:
-            raise FileNotFoundError("❌ symbol_list 데이터가 없습니다.")
+            self.log.info(f"🏗️ Building AssetMasterPipeline | trd_dt={self.trd_dt}, country={self.country_code}")
+            self.exchanges = self._load_exchange_codes()
 
-        # ✅ 병합 (DuckDB 없이 pandas 병합으로도 충분하나, 기존 형태 유지 시 아래처럼 DuckDB 사용 가능)
-        conn.register("symbol_df", symbol_df)
-        conn.register("fundamental_df", fundamental_df)
-        conn.register("exchange_df", exchange_df)
+            sources = self._load_source_datasets(self.exchanges)
+            symbol_df = self._normalize_symbol_list(sources["symbol_list"])
+            fundamental_df = self._normalize_fundamentals(sources["fundamentals"])
+            exchange_df = self._normalize_exchange_detail(sources["exchange_list"])
 
-        query = f"""
-        WITH merged AS (
-          SELECT 
-            upper(s.ticker) AS ticker,
-            s.security_name,
-            s.exchange_code,
-            s.security_type,
-            COALESCE(s.country_code, '{self.country_code}') AS country_code,
-            s.currency_code,
+            if symbol_df.empty:
+                raise FileNotFoundError("❌ symbol_list 데이터가 없습니다.")
 
-            -- fundamentals 필드 확장
-            f.isin,
-            f.cusip,
-            f.lei,
-            f.open_figi,
-            f.cik,
-            f.fiscal_year_end,
-            f.primary_ticker,
-            f.logo_url,
-            f.last_fundamental_update,
-            f.sector,
-            f.industry,
-            f.gic_sector,
-            f.gic_group,
-            f.gic_industry,
-            f.gic_sub_industry,
-            f.ipo_date,
-            f.is_delisted,
+            # ✅ 병합 (DuckDB 없이 pandas 병합으로도 충분하나, 기존 형태 유지 시 아래처럼 DuckDB 사용 가능)
+            conn.register("symbol_df", symbol_df)
+            conn.register("fundamental_df", fundamental_df)
+            conn.register("exchange_df", exchange_df)
 
-            -- exchange info
-            e.exchange_name,
+            query = f"""
+            WITH merged AS (
+              SELECT 
+                upper(s.ticker) AS ticker,
+                s.name,
+                s.exchange_code,
+                s.security_type,
+                COALESCE(s.country_code, '{self.country_code}') AS country_code,
+                s.currency_code,
+    
+                -- fundamentals 필드 확장
+                f.isin,
+                f.cusip,
+                f.lei,
+                f.open_figi,
+                f.cik,
+                f.fiscal_year_end,
+                f.primary_ticker,
+                f.logo_url,
+                f.last_fundamental_update,
+                f.sector,
+                f.industry,
+                f.gic_sector,
+                f.gic_group,
+                f.gic_industry,
+                f.gic_sub_industry,
+                f.ipo_date,
+                f.is_delisted,
+    
+                -- exchange info
+                e.exchange_name,
+    
+                -- 메타정보
+                now() AT TIME ZONE 'UTC' AS ingested_at,
+                '{VENDORS.get("eodhd", "eodhd")}' AS source_vendor,
+                '{self.trd_dt}'::DATE AS snapshot_date
+              FROM symbol_df s
+              LEFT JOIN fundamental_df f ON s.ticker = f.ticker
+              LEFT JOIN exchange_df e ON s.exchange_code = e.exchange_code
+            )
+            SELECT * FROM merged;
+            """
 
-            -- 메타정보
-            now() AT TIME ZONE 'UTC' AS ingested_at,
-            '{VENDORS.get("eodhd", "eodhd")}' AS source_vendor,
-            '{self.trd_dt}'::DATE AS snapshot_date
-          FROM symbol_df s
-          LEFT JOIN fundamental_df f ON s.ticker = f.ticker
-          LEFT JOIN exchange_df e ON s.exchange_code = e.exchange_code
-        )
-        SELECT * FROM merged;
-        """
+            self.log.info("🧩 Executing DuckDB join query ...")
+            merged_df = conn.execute(query).df().replace("None", pd.NA)
 
-        self.log.info("🧩 Executing DuckDB join query ...")
-        merged_df = conn.execute(query).df().replace("None", pd.NA)
-        conn.close()
+            # ✅ 비즈니스 로직(+ security_id 및 이벤트) 적용
+            final_df = self._transform_business_logic(
+                symbol_list=merged_df,
+                fundamentals=None,
+                exchange_list=None
+            )
 
-        # ✅ 비즈니스 로직(+ security_id 및 이벤트) 적용
-        final_df = self._transform_business_logic(
-            symbol_list=merged_df,
-            fundamentals=None,
-            exchange_list=None
-        )
+            reorder_df = self._reorder_columns(df=final_df)
 
-        reorder_df = self._reorder_columns(df=final_df)
+            # ✅ 저장
+            self.save_parquet(reorder_df)
+            self.log.info(f"✅ asset_master build complete: {len(reorder_df):,} rows")
 
-        # ✅ 저장
-        self.save_parquet(reorder_df)
-        self.log.info(f"✅ asset_master build complete: {len(reorder_df):,} rows")
+            meta = self.save_metadata(
+                row_count=len(reorder_df),
+                source_datasets=["symbol_list", "fundamentals", "exchange_list"],
+                metrics={
+                    "symbol_count": len(reorder_df),
+                    "vendor": self.vendor,
+                    "exchanges": self.exchanges
+                },
+                context=kwargs.get("context"),
+            )
 
-        meta = self.save_metadata(
-            row_count=len(reorder_df),
-            source_datasets=["symbol_list", "fundamentals", "exchange_list"],
-            metrics={
-                "symbol_count": len(reorder_df),
-                "vendor": self.vendor,
-                "exchanges": self.exchanges
-            },
-            context=kwargs.get("context"),
-        )
-
-        gc.collect()
-        return meta
+            gc.collect()
+            return meta
