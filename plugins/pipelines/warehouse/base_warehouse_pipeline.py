@@ -12,8 +12,7 @@ from pathlib import Path
 from plugins.utils.path_manager import DataPathResolver
 from plugins.config.constants import (
     DATA_WAREHOUSE_ROOT,
-    VALIDATOR_SCHEMA_LAKE, VALIDATOR_CHECKS_LAKE, DATA_LAKE_ROOT,
-    VALIDATOR_SCHEMA_WAREHOUSE, VALIDATOR_CHECKS_WAREHOUSE,
+    VALIDATOR_SCHEMA_WAREHOUSE,
     WAREHOUSE_DOMAINS,
 )
 
@@ -98,7 +97,18 @@ class BaseWarehousePipeline(ABC):
                 ["None", "none", "NULL", "null", "NaN", "nan"], pd.NA
             )
 
-            table = pa.Table.from_pandas(df)
+            # 공통 메타 필드 자동 추가
+            df["snapshot_date"] = self.trd_dt
+            df["source_vendor"] = self.vendor
+            ts = datetime.now(timezone.utc)
+            df["created_at"] = ts
+
+            # country_code가 있으면 함께 저장
+            if self.country_code:
+                df["country_code"] = self.country_code
+
+            table = pa.Table.from_pandas(df=df, preserve_index=False)
+
             pq.write_table(table, self.output_file.as_posix())
 
             file_size = self.output_file.stat().st_size

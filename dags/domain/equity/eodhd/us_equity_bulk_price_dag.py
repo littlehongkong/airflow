@@ -45,7 +45,6 @@ with DAG(
             "exchange_code": EXCHANGE_CODE,
             "trd_dt": "{{ data_interval_end | ds }}",  # 템플릿은 그대로 가능
             "domain": C.DATA_DOMAINS["prices"],
-            "allow_empty": True,
             "vendor": C.VENDORS["eodhd"],
             "domain_group": C.DOMAIN_GROUPS["equity"],
         },

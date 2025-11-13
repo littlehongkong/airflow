@@ -1,297 +1,180 @@
 """
-plugins/pipelines/warehouse/exchange_master_pipeline.py
-
 💾 거래소 마스터 파이프라인
-- Data Lake(validated) → Data Warehouse(exchange)
-- BaseWarehousePipeline + transform_utils 기반 표준형
+- Data Lake(validated) → Data Warehouse(exchange_master)
 """
 
 import pandas as pd
-from typing import Dict, Any, Optional, List
+import json
+from typing import Dict, Any
 
 from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePipeline
-from plugins.config.constants import WAREHOUSE_DOMAINS, DOMAIN_GROUPS
 from plugins.utils.transform_utils import normalize_columns, safe_merge
-
 from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
-from plugins.utils.loaders.lake.exchange_holiday_loader import load_exchange_holiday_list
-
+from plugins.utils.warehouse_utils import load_exchange_details_by_country
 
 class ExchangeMasterPipeline(BaseWarehousePipeline):
     """
-    ✅ 거래소 마스터 파이프라인 (Warehouse Domain: exchange)
+    ✅ 거래소 마스터 파이프라인 (Warehouse Domain: exchange_master)
 
     [파이프라인 구조]
     1️⃣ Data Lake validated 데이터 로드
-    2️⃣ 거래소 데이터 정규화
-    3️⃣ 휴장일 데이터 병합
-    4️⃣ Pandera 스키마 기준 컬럼 정렬 및 저장
+    2️⃣ 거래소 리스트 + 상세데이터 정규화
+    3️⃣ TradingHours 등 flatten 후 병합
+    4️⃣ Pandera 스키마 정렬 및 저장
     """
 
-    def __init__(self, trd_dt: str, vendor: str = None, **kwargs):
-        super().__init__(
-            domain="exchange",
-            domain_group=DOMAIN_GROUPS["equity"],
-            trd_dt=trd_dt,
-            vendor=vendor,
-        )
-        self.trigger_source = kwargs.get("trigger_source", None)  # ✅ 로그용으로 저장
+    def __init__(self, domain: str, domain_group: str, trd_dt: str, vendor: str = None, **kwargs):
+        super().__init__(domain=domain, domain_group=domain_group, trd_dt=trd_dt, vendor=vendor)
         self.layer = "warehouse"
+        self.master_countries = kwargs.get("master_countries")
 
-    # ============================================================
-    # 📘 1️⃣ 거래소 리스트 정규화
+        # ============================================================
+    # 1️⃣ 거래소 리스트 정규화
     # ============================================================
     def _normalize_exchange_list(self, df: pd.DataFrame) -> pd.DataFrame:
         df = normalize_columns(df)
 
-        code_col = next(
-            (c for c in ("code", "exchange_code", "mic", "operatingmic") if c in df.columns),
-            None
-        )
-        if not code_col:
-            raise ValueError("❌ 거래소 데이터에 code/exchange_code 컬럼이 없습니다.")
+        code_col = "code"
 
-        # 🔹 제거 대상 거래소 코드 목록
-        exclude_exchanges = [
-            "FOREX",
-            "CC",  # Cryptocurrencies
-            "MONEY",  # Money Market Virtual Exchange
-            "EUFUND",  # Europe Fund Virtual Exchange
-            "GBOND",  # Government Bonds
-        ]
-
-        # 🔹 실제 필터링
-        before = len(df)
-        df = df[~df["code"].str.upper().isin(exclude_exchanges)]
-        after = len(df)
-
-        removed_count = before - after
-        if removed_count > 0:
-            self.log.info(f"🚫 Excluded {removed_count:,} virtual exchanges: {exclude_exchanges}")
-        else:
-            self.log.info("✅ No excluded exchanges found")
+        exclude_exchanges = ["FOREX", "CC", "MONEY", "EUFUND", "GBOND"]
+        df = df[~df[code_col].astype(str).str.upper().isin(exclude_exchanges)]
 
         normalized = pd.DataFrame({
             "country_code": df.get("countryiso3", df.get("country_code", "")),
-            "country_name": df.get("country", df.get("country_name", "")),
-            "exchange_code": df[code_col],
-            "exchange_name": df.get("name", df.get("exchange_name", "")),
-            "currency": df.get("currency", ""),
+            "exchange_code": df[code_col].astype(str).str.strip().str.upper(),
+            "exchange_name": df.get("name", ""),
+            "currency_code": df.get("currency", ""),
             "country_iso2": df.get("countryiso2", ""),
-            "timezone": df.get("timezone", ""),
             "operating_mic": df.get("operatingmic", df.get(code_col, "")),
-            "active_tickers": df.get("activetickers", df.get("active_tickers", None)),
-            "previous_day_updated_tickers": df.get(
-                "previous_day_updated_tickers", df.get("previousdayupdatedtickers", None)
-            ),
-            "updated_tickers": df.get("updated_tickers", df.get("updatedtickers", None)),
         })
 
-        for col in ["country_code", "exchange_code", "exchange_name"]:
-            normalized[col] = normalized[col].astype(str).str.strip().str.upper()
-
-        return normalized[
-            (normalized["country_code"] != "") &
-            (normalized["exchange_code"] != "")
-        ]
+        return normalized.dropna(subset=["exchange_code"]).reset_index(drop=True)
 
     # ============================================================
-    # 📘 2️⃣ 휴장일 정규화
+    # 2️⃣ 거래소 상세데이터 정규화 (TradingHours 중심)
     # ============================================================
-    def _normalize_exchange_holiday(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        휴장일 데이터 표준화 + 컬럼 슬림화
-        - exchange_code, holiday_name, holiday_date 3개만 남김
-        """
+    def _normalize_exchange_detail(self, df: pd.DataFrame) -> pd.DataFrame:
         df = normalize_columns(df)
+        if df.empty:
+            return pd.DataFrame()
 
-        # 1) 거래소 식별 컬럼 정규화
-        exch_col = next(
-            (c for c in ("exchange", "exchange_code", "code", "mic", "operatingmic") if c in df.columns),
-            None
-        )
-        if exch_col is None:
-            self.log.warning("⚠️ holiday_df에 거래소 식별 컬럼이 없습니다. (병합 생략)")
-            df["exchange_code"] = None
-        else:
+        exch_col = next((c for c in ("code") if c in df.columns), None)
+        if exch_col:
             df = df.rename(columns={exch_col: "exchange_code"})
 
-        # 2) 필요한 컬럼만 남김
-        #   - 원본에 따라 holiday_date가 date/Datetime/string 혼재 가능 → pandas datetime 캐스팅
-        keep_cols = []
-        if "holiday_name" in df.columns:
-            keep_cols.append("holiday_name")
-        if "holiday_date" in df.columns:
-            keep_cols.append("holiday_date")
+        self.log.info(df.iloc[0])
 
-        # 없으면 생성(널)
-        if "holiday_name" not in df.columns:
-            df["holiday_name"] = None
-        if "holiday_date" not in df.columns:
-            df["holiday_date"] = None
+        # TradingHours flatten
+        df["open_time"] = df["tradinghours"].apply(
+            lambda x: json.loads(x).get("Open") if isinstance(x, str) else x.get("Open") if isinstance(x,
+                                                                                                       dict) else None
+        )
 
-        df = df[["exchange_code", "holiday_name", "holiday_date"]]
+        df["close_time"] = df["tradinghours"].apply(
+            lambda x: json.loads(x).get("Close") if isinstance(x, str) else x.get("Close") if isinstance(x,
+                                                                                                         dict) else None
+        )
 
-        # 3) 타입 보정
-        try:
-            df["holiday_date"] = pd.to_datetime(df["holiday_date"], errors="coerce", utc=False)
-        except Exception:
-            pass
+        df["open_time_utc"] = df["tradinghours"].apply(
+            lambda x: json.loads(x).get("OpenUTC") if isinstance(x, str) else x.get("OpenUTC") if isinstance(x,
+                                                                                                             dict) else None
+        )
 
-        # exchange_code 대문자/트림
-        df["exchange_code"] = df["exchange_code"].astype(str).str.strip().str.upper()
+        df["close_time_utc"] = df["tradinghours"].apply(
+            lambda x: json.loads(x).get("CloseUTC") if isinstance(x, str) else x.get("CloseUTC") if isinstance(x,
+                                                                                                               dict) else None
+        )
 
-
-        return df
-
-    # ============================================================
-    # 📘 3️⃣ 도메인 변환 로직 (Pandera 스키마 정합성 반영)
-    # ============================================================
-    def _transform_business_logic(
-            self,
-            exchange_list: pd.DataFrame,
-            exchange_holiday: Optional[pd.DataFrame] = None,
-            **kwargs
-    ) -> pd.DataFrame:
-        """
-        거래소 + (축약된) 휴장일 통합 변환
-        - 휴장일은 기준일(self.trd_dt) 이후 '가장 가까운 휴장일' 1건만 남겨서 join
-        """
-        # 1) 중복 제거
-        deduped = exchange_list.drop_duplicates(subset=["exchange_code"], keep="first")
-
-        # 2) 휴장일 축약: 기준일 이후 첫 휴장일만 남김
-        if exchange_holiday is not None and not exchange_holiday.empty:
-
-            # 기준일 파싱
-            ref_dt = pd.to_datetime(self.trd_dt)
-
-            # 기준일 이후(>=)만 필터
-            future_holidays = exchange_holiday.loc[
-                (exchange_holiday["holiday_date"].notna()) & (exchange_holiday["holiday_date"] >= ref_dt)
-                ].copy()
-
-            # 가장 가까운 휴장일 1건/거래소
-            #   sort asc → groupby().head(1) or idxmin
-            future_holidays = future_holidays.sort_values(["exchange_code", "holiday_date"], ascending=[True, True])
-            next_holiday = future_holidays.groupby("exchange_code", as_index=False).first()
-            # 필요 컬럼만 보장
-            next_holiday = next_holiday[["exchange_code", "holiday_name", "holiday_date"]]
-
-            # 3) 병합 (슬림해진 df만 JOIN)
-            merged = safe_merge(
-                left=deduped,
-                right=next_holiday,
-                left_on="exchange_code",
-                right_on="exchange_code",
-                how="left",
-                suffixes=("", "_holiday"),
-            )
-        else:
-            merged = deduped
-
-        # 4) Pandera 스키마 누락 컬럼 보정
-        for col in ["open_time", "close_time", "working_days"]:
-            if col not in merged.columns:
-                merged[col] = None
-
-        # 5) 컬럼명 표준화 (원본 api 표기 → 표준 스키마 표기)
-        rename_map = {
+        df["working_days"] = df["tradinghours"].apply(
+            lambda x: json.loads(x).get("WorkingDays") if isinstance(x, str) else x.get("WorkingDays") if isinstance(x,
+                                                                                                                     dict) else None
+        )
+        keep_cols = [
+            "exchange_code", "timezone", "workingdays",
+            "open_time", "close_time", "open_time_utc", "close_time_utc", "working_days",
+            "activetickers", "previousdayupdatedtickers", "updatedtickers"
+        ]
+        df = df[[c for c in keep_cols if c in df.columns]].copy()
+        df = df.rename(columns={
             "activetickers": "active_tickers",
-            "previousdayupdatedtickers": "previous_day_updated_tickers",
-            "updatedtickers": "updated_tickers",
-        }
-        merged = merged.rename(columns=rename_map)
+            "previousdayupdatedtickers":"previous_day_updated_tickers",
+            "updatedtickers": "updated_tickers"
+        })
 
-        # ✅ 수치 컬럼 형 변환
-        for col in ["active_tickers", "previous_day_updated_tickers", "updated_tickers"]:
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
+        df["exchange_code"] = df["exchange_code"].astype(str).str.upper().str.strip()
+        return df.drop_duplicates(subset=["exchange_code"])
+
+    # ============================================================
+    # 3️⃣ 도메인 변환 로직
+    # ============================================================
+    def _transform_business_logic(self, exchange_list: pd.DataFrame, exchange_detail: pd.DataFrame) -> pd.DataFrame:
+
+        merged = safe_merge(
+            df1=exchange_list,
+            df2=exchange_detail,
+            on="exchange_code",
+            how="inner",
+        )
+
+        self.log.info(f"merged.columns : {merged.columns}")
+
+        # 컬럼 정리 및 타입 보정
+        for col in ["active_tickers", "updated_tickers"]:
             if col in merged.columns:
                 merged[col] = pd.to_numeric(merged[col], errors="coerce")
 
-        # 6) 완전 방어: 컬럼 중복 제거 + 여분 컬럼 드랍(holiday_* 접미사 등)
-        merged = merged.loc[:, ~merged.columns.duplicated(keep="first")]
-        drop_extras = [c for c in merged.columns if c.endswith("_holiday")]
-        if drop_extras:
-            merged = merged.drop(columns=drop_extras, errors="ignore")
-
-        # 7) 컬럼 순서 표준화 (Pandera 스키마 기준)
         final_df = self._reorder_columns(merged)
         return final_df
 
-
+    # ============================================================
+    # 4️⃣ 데이터 로드 및 빌드
+    # ============================================================
     def _load_source_datasets(self) -> dict[str, pd.DataFrame]:
-        """✅ Domain별 Loader를 직접 호출하는 명시적 버전"""
 
-        exchange_df = load_exchange_list(
-            domain_group=self.domain_group,
-            vendor=self.vendor,
-            trd_dt=self.trd_dt
-        )
+        # 1) exchange_list 로드
+        exchange_df = load_exchange_list(self.domain_group, self.vendor, self.trd_dt)
 
-        exchanges = exchange_df[exchange_df['CountryISO3'] == self.country_code]['Code'].tolist()
-        holiday_dfs = []
+        # 2) master_countries 기준으로 exchange_detail 로드
+        all_details = []
 
-        for exchange_code in exchanges:
-            exchange_holiday_df = load_exchange_holiday_list(
+        for country in self.master_countries:
+            detail_by_country = load_exchange_details_by_country(
                 domain_group=self.domain_group,
                 vendor=self.vendor,
                 trd_dt=self.trd_dt,
-                exchange_code=exchange_code
+                country_code=country
             )
+            if detail_by_country is not None and not detail_by_country.empty:
+                all_details.append(detail_by_country)
 
-            if exchange_holiday_df is not None and not exchange_holiday_df.empty:
-                # 각 거래소 코드 식별용 컬럼 추가 (선택)
-                exchange_holiday_df["exchange_code"] = exchange_code
-                holiday_dfs.append(exchange_holiday_df)
-            else:
-                self.log.warning(f"⚠️ No holiday data found for exchange_code={exchange_code}")
-
-        # ✅ 병합 처리 (빈 리스트 방어)
-        if holiday_dfs:
-            exchange_holiday_df = pd.concat(holiday_dfs, ignore_index=True)
+        if all_details:
+            exchange_detail_df = pd.concat(all_details, ignore_index=True)
         else:
-            exchange_holiday_df = pd.DataFrame()
+            exchange_detail_df = pd.DataFrame()
 
-        # ✅ 반환 구조
         return {
-            "exchange_holiday": exchange_holiday_df,
-            "exchange_list": exchange_df
+            "exchange_list": exchange_df,
+            "exchange_detail": exchange_detail_df
         }
 
-
-    # ============================================================
-    # 📘 5️⃣ 전체 빌드 실행
-    # ============================================================
     def build(self, **kwargs) -> Dict[str, Any]:
         self.log.info(f"🏗️ Building ExchangeMasterPipeline | snapshot_dt={self.trd_dt}")
 
-        assert self.trd_dt is not None, f"trd_dt 값을 확인해주세요. trd_dt : {self.trd_dt}"
-
         sources = self._load_source_datasets()
-        exchange_df = sources.get("exchange_list")
-        holiday_df = sources.get("exchange_holiday")
-
-        if exchange_df is None or exchange_df.empty:
+        if sources["exchange_list"].empty:
             raise FileNotFoundError("❌ exchange_list 데이터가 없습니다.")
 
-        self.log.info("필드 정규화 시작")
-        norm_exchange_df = self._normalize_exchange_list(df=exchange_df)
-        norm_holiday_df = self._normalize_exchange_holiday(holiday_df)
-        self.log.info("필드 정규화 종료")
-        self.log.info(norm_exchange_df.tail(5))
+        norm_list = self._normalize_exchange_list(sources["exchange_list"])
+        norm_detail = self._normalize_exchange_detail(sources["exchange_detail"])
+        final_df = self._transform_business_logic(norm_list, norm_detail)
 
-        final_df = self._transform_business_logic(
-            exchange_list=norm_exchange_df,
-            exchange_holiday=norm_holiday_df,
-        )
-
-        # ✅ 저장 + 메타 기록
         self.save_parquet(final_df)
         meta = self.save_metadata(
             row_count=len(final_df),
             source_datasets=list(sources.keys()),
-            metrics={"vendor": self.vendor},
-            context=kwargs.get("context"),
+            vendor=self.vendor,
         )
 
         self.log.info(f"✅ [BUILD COMPLETE] exchange_master | {len(final_df):,} rows")

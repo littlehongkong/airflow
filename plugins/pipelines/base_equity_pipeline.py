@@ -35,12 +35,13 @@ class BaseEquityPipeline(HookMixin, ABC):
     3️⃣ _source_meta.json 자동 생성 및 비밀값 마스킹
     """
 
-    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str | None = None):
+    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str | None = None, allow_empty: bool = False):
         self.domain = domain                  # 예: "symbol_list", "fundamentals"
         self.exchange_code = exchange_code    # 예: "US"
         self.trd_dt = trd_dt                  # 예: "2025-11-03"
         self.layer = "data_lake"
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.allow_empty = allow_empty
         C.DATA_LAKE_ROOT.mkdir(parents=True, exist_ok=True)
 
         # ✅ 1️⃣ domain_group 자동 인식 (없으면 constants 기반 추론)
@@ -129,34 +130,56 @@ class BaseEquityPipeline(HookMixin, ABC):
     # 4️⃣ 파일 저장 (JSONL)
     # ============================================================
     def _write_records_to_lake(
-        self,
-        records: List[Dict],
-        target_dir: Path,
-        base_metadata: Dict[str, Any],
-        file_name: Union[str, Callable[[List[Dict]], str]],
-        mode: str = "overwrite",
+            self,
+            records: List[Dict],
+            target_dir: Path,
+            base_metadata: Dict[str, Any],
+            file_name: Union[str, Callable[[List[Dict]], str]],
+            mode: str = "overwrite",
     ) -> Dict[str, Any]:
-        if not records:
-            self.log.warning("⚠️ 저장할 레코드가 없습니다.")
-            return {"count": 0, "target_path": str(target_dir), "file_path": None}
-
+        target_dir.mkdir(parents=True, exist_ok=True)
         file_path = target_dir / (file_name if isinstance(file_name, str) else file_name(records))
-        open_mode = "a" if mode == "append" else "w"
-
-        with open(file_path, open_mode, encoding="utf-8") as f:
-            for rec in records:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
         meta_path = target_dir / "_source_meta.json"
+
+        # ============================================================
+        # 1️⃣ Empty Handling
+        # ============================================================
+        if not records:
+            if getattr(self, "allow_empty", False):
+                self.log.warning("⚠️ 저장할 레코드가 없습니다. (allow_empty=True)")
+                # ✅ 빈 JSONL 파일 생성
+                with open(file_path, "w", encoding="utf-8") as f:
+                    pass  # 빈 파일
+                record_count = 0
+            else:
+                self.log.error("❌ 빈 데이터가 허용되지 않는 도메인입니다.")
+                raise ValueError("빈 데이터가 허용되지 않는 도메인입니다.")
+        else:
+            open_mode = "a" if mode == "append" else "w"
+            with open(file_path, open_mode, encoding="utf-8") as f:
+                for rec in records:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            record_count = len(records)
+
+        # ============================================================
+        # 2️⃣ 메타정보 작성 (_source_meta.json)
+        # ============================================================
         meta_info = base_metadata.copy()
-        meta_info["record_count"] = len(records)
+        meta_info["record_count"] = record_count
         meta_info["saved_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
         with open(meta_path, "w", encoding="utf-8") as mf:
             json.dump(meta_info, mf, indent=2, ensure_ascii=False)
 
-        self.log.info(f"✅ JSONL 저장 완료: {file_path.name} ({len(records):,}건)")
-        return {"count": len(records), "target_path": str(target_dir), "file_path": str(file_path)}
+        # ============================================================
+        # 3️⃣ 로그 및 반환
+        # ============================================================
+        self.log.info(f"✅ JSONL 저장 완료: {file_path.name} ({record_count:,}건)")
+        return {
+            "count": record_count,
+            "target_path": str(target_dir),
+            "file_path": str(file_path),
+        }
 
     # ============================================================
     # 5️⃣ Fetch 결과 표준화

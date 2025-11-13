@@ -43,8 +43,9 @@ def read_json_dir(base_path: Path, pattern: str = "*.json") -> pd.DataFrame:
 
 
 def latest_partition(base_dir: Path) -> Path:
-    """📂 가장 최신 trd_dt 파티션을 반환"""
+    print("🔍 DEBUG base_dir:", base_dir, type(base_dir))
     candidates = sorted(base_dir.glob("trd_dt=*"), reverse=True)
+    print("🔍 DEBUG candidates:", candidates)
     if not candidates:
         raise FileNotFoundError(f"❌ No partitions under {base_dir}")
     latest = candidates[0]

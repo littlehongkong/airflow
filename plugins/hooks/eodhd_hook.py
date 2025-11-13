@@ -133,14 +133,14 @@ class EODHDHook(HttpHook):
         params = {'from': trd_dt}
         return self._run_api(endpoint, params=params)
 
-    def get_exchange_holidays(self, exchange_code: str, year: int = None):
+    def get_exchange_details(self, exchange_code: str, year: int = None):
         """
         휴장일
-        문서 예: /api/exchange-holidays/{EXCHANGE_CODE}?year=YYYY
+        문서 예: /api/exchange_details/{EXCHANGE_CODE}?year=YYYY
         """
         endpoint = f"api/exchange-details/{exchange_code}"
         params = {}
         if year:
             params["year"] = year
-        self.log.info(f"Fetching holidays for exchange: {exchange_code}, year={year}")
+        self.log.info(f"Fetching exchange detail for exchange: {exchange_code}, year={year}")
         return self._run_api(endpoint, params=params)

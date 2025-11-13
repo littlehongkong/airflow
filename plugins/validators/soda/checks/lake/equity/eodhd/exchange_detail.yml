@@ -1,4 +1,4 @@
-checks for exchange_holiday:
+checks for exchange_detail:
   # ✅ 데이터 존재
   - row_count > 0
 

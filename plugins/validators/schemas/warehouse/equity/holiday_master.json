@@ -1,0 +1,62 @@
+{
+  "description": "Holiday Master Schema",
+  "columns": [
+    {
+      "name": "exchange_code",
+      "type": "String",
+      "nullable": false
+    },
+    {
+      "name": "country_code",
+      "type": "String",
+      "nullable": false
+    },
+    {
+      "name": "holiday_name",
+      "type": "String",
+      "nullable": true
+    },
+    {
+      "name": "holiday_date",
+      "type": "DateTime",
+      "nullable": false
+    },
+    {
+      "name": "holiday_type",
+      "type": "String",
+      "nullable": true
+    },
+
+    {
+      "name": "snapshot_date",
+      "type": "DateTime",
+      "nullable": false
+    },
+    {
+      "name": "source_vendor",
+      "type": "String",
+      "nullable": false
+    },
+    {
+      "name": "created_at",
+      "type": "DateTime",
+      "nullable": false
+    }
+  ],
+
+  "constraints": {
+    "patterns": {
+      "exchange_code": "^[A-Z0-9._-]{1,10}$",
+      "country_code": "^[A-Z]{2,3}$",
+      "holiday_type": "^[A-Za-z0-9 _-]*$"
+    },
+    "non_nullable": [
+      "exchange_code",
+      "country_code",
+      "holiday_date",
+      "snapshot_date",
+      "source_vendor",
+      "created_at"
+    ]
+  }
+}

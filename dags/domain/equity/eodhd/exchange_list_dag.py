@@ -22,7 +22,13 @@ with DAG(
         task_id="fetch_exchange_list",
         pipeline_cls=ExchangeInfoPipeline,
         method_name="fetch_and_load",
-        op_kwargs={"domain": C.DATA_DOMAINS["exchange_list"], "trd_dt": "{{ data_interval_end | ds }}", 'exchange_code': 'ALL', "domain_group": C.DOMAIN_GROUPS["equity"]},
+        op_kwargs={
+            "domain": C.DATA_DOMAINS["exchange_list"],
+            "trd_dt": "{{ data_interval_end | ds }}",
+            'exchange_code': 'ALL',
+            "domain_group": C.DOMAIN_GROUPS["equity"],
+            "allow_empty": False
+        }
     )
 
     validate_exchange_list = LakeOperator(

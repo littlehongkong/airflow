@@ -1,4 +1,4 @@
-checks for prices:
+checks for price_master:
   # ✅ 기본 품질 지표
   - row_count > 0
 
@@ -9,6 +9,10 @@ checks for prices:
   - missing_count(close) = 0
   - missing_count(source_vendor) = 0
   - missing_count(snapshot_date) = 0
+
+  # ✅ 고유성 및 키 무결성 검증
+  - duplicate_count(security_id) = 0
+  - duplicate_count(ticker) = 0
 
   # ✅ 거래가격 논리 검증 (OHLC 관계)
   - failed rows:
