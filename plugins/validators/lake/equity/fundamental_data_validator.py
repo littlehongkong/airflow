@@ -164,7 +164,7 @@ class FundamentalDataValidator(BaseDataValidator):
                 schema_def = json.load(f)
             checks["pandera_schema"] = self._validate_with_pandera(df, schema_def)
         else:
-            self.log.warning(f"⚠️ Pandera schema not found: {schema_path}")
+            raise FileNotFoundError(f"Pandera schema not found: {schema_path}")
 
         return checks
 

@@ -1,17 +1,18 @@
 {
-  "table_name": "exchange",
+  "table_name": "exchange_master",
   "description": "거래소 기본 정보 마스터 테이블 (EODHD 기반)",
   "columns": [
     {"name": "country_code", "type": "String", "nullable": false},
-    {"name": "country_name", "type": "String", "nullable": true},
     {"name": "exchange_code", "type": "String", "nullable": false},
     {"name": "exchange_name", "type": "String", "nullable": false},
-    {"name": "currency", "type": "String", "nullable": false},
+    {"name": "currency_code", "type": "String", "nullable": false},
     {"name": "country_iso2", "type": "String", "nullable": true},
     {"name": "timezone", "type": "String", "nullable": true},
     {"name": "operating_mic", "type": "String", "nullable": true},
     {"name": "open_time", "type": "String", "nullable": true},
     {"name": "close_time", "type": "String", "nullable": true},
+    {"name": "open_time_utc", "type": "String", "nullable": true},
+    {"name": "close_time_utc", "type": "String", "nullable": true},
     {"name": "working_days", "type": "String", "nullable": true},
     {"name": "active_tickers", "type": "Float", "nullable": true},
     {"name": "previous_day_updated_tickers", "type": "Float", "nullable": true},
@@ -19,7 +20,7 @@
   ],
   "constraints": {
     "unique": ["exchange_code"],
-    "non_nullable": ["exchange_code", "exchange_name", "country_code", "country_iso2","currency"],
+    "non_nullable": ["exchange_code", "exchange_name", "country_code", "country_iso2","currency_code"],
     "patterns": {
       "country_iso2": "^[A-Z]{2}$",
       "currency": "^[A-Z]{3}$"

@@ -19,10 +19,10 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
       - security_id 부여 및 스키마 표준화
     """
 
-    def __init__(self, trd_dt: str, vendor: str = "eodhd", country_code: str = None):
+    def __init__(self, domain: str, domain_group: str, trd_dt: str, vendor: str = "eodhd", country_code: str = None):
         super().__init__(
-            domain="prices",
-            domain_group="equity",
+            domain=domain,
+            domain_group=domain_group,
             trd_dt=trd_dt,
             vendor=vendor,
             country_code=country_code,
@@ -98,12 +98,6 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
         existing_cols = [c for c in required_cols if c in df.columns]
         df = df[existing_cols]
 
-        # ✅ 메타 컬럼 추가 (스키마 명세 기반)
-        df["source_vendor"] = self.vendor
-        df["snapshot_date"] = pd.to_datetime(self.trd_dt).date()
-        df["created_at"] = pd.Timestamp.utcnow()
-        # df["updated_at"] = pd.Timestamp.utcnow() # 필요없음. 새로 만들어서 적재하므로
-
         # 결측값/타입 정리
         df = df.fillna({"volume": 0, "market_cap": 0})
 
@@ -117,11 +111,7 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
             "low",
             "close",
             "volume",
-            "market_cap",
-            "created_at",
-            "updated_at",
-            "source_vendor",
-            "snapshot_date",
+            "market_cap"
         ]
         df = df.reindex(columns=schema_order)
 
@@ -162,9 +152,10 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
             self.log.warning("⚠️ No records to assign security_id (empty DataFrame).")
             return df
 
-        master_df = load_asset_master_latest(self.domain_group)
+        master_df = load_asset_master_latest(domain_group=self.domain_group, country_code=self.country_code)
 
         # ✅ 국가별 join key 설정
+        # todo :  join_keys = ["ticker"] 로만 코드 일원화예정(eodhd 오류 해결 완료시)
         if self.country_code in ["USA", "US"]:
             join_keys = ["ticker"]  # 🇺🇸 미국은 ticker 단위 매핑
         else:

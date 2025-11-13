@@ -1,9 +1,9 @@
-# plugins/utils/loaders/equity/exchange_holiday_loader.py
+# plugins/utils/loaders/equity/exchange_detail_loader.py
 import pandas as pd
 from plugins.config.constants import DATA_LAKE_VALIDATED
 from plugins.utils.loaders.base_loader import read_parquet_dir, latest_partition
 
-def load_exchange_holiday_list(domain_group: str, vendor: str, trd_dt: str, exchange_code: str) -> pd.DataFrame:
+def load_exchange_detail_list(domain_group: str, vendor: str, trd_dt: str, exchange_code: str) -> pd.DataFrame:
     """
     ✅ Exchange List 로더 (월 1회 수집 기준)
     - 해당 trd_dt 폴더 없으면 최신 partition 자동 선택
@@ -11,7 +11,7 @@ def load_exchange_holiday_list(domain_group: str, vendor: str, trd_dt: str, exch
     base_dir = (
         DATA_LAKE_VALIDATED
         / domain_group
-        / "exchange_holiday"
+        / "exchange_detail"
         / f"vendor={vendor}"
         / f"exchange_code={exchange_code}"
     )

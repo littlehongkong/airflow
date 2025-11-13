@@ -54,6 +54,7 @@ with DAG(
                 "domain": C.DATA_DOMAINS["splits"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "trd_dt": trd_dt,
+                "allow_empty": True
             },
         )
 
@@ -66,7 +67,6 @@ with DAG(
                 "trd_dt": trd_dt,
                 "domain": C.DATA_DOMAINS["splits"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "allow_empty": True,
                 "vendor": C.VENDORS["eodhd"]
             },
         )
@@ -80,6 +80,7 @@ with DAG(
                 "domain": C.DATA_DOMAINS["dividends"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "trd_dt": trd_dt,
+                "allow_empty": True
             },
         )
 
@@ -92,7 +93,6 @@ with DAG(
                 "trd_dt": trd_dt,
                 "domain": C.DATA_DOMAINS["dividends"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "allow_empty": True,
                 "vendor": C.VENDORS["eodhd"]
             },
         )
@@ -117,6 +117,7 @@ with DAG(
             "domain": C.DATA_DOMAINS['symbol_changes'],
             "domain_group": C.DOMAIN_GROUPS["equity"],
             "trd_dt": trd_dt,
+            "allow_empty": True
         },
     )
 
@@ -129,7 +130,6 @@ with DAG(
             "domain": C.DATA_DOMAINS['symbol_changes'],
             "domain_group": C.DOMAIN_GROUPS["equity"],
             "trd_dt": trd_dt,
-            "allow_empty": True,
             "vendor": C.VENDORS["eodhd"]
         },
     )

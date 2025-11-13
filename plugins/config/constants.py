@@ -119,7 +119,7 @@ DATA_DOMAINS = {
     "prices": "prices",
     "dividends": "dividends",
     "splits": "splits",
-    "exchange_holiday": "exchange_holiday",
+    "exchange_detail": "exchange_detail",
     "corporate_actions": "corporate_actions",
     "exchange_list": "exchange_list",
 }
@@ -158,7 +158,7 @@ WAREHOUSE_DOMAINS = {
 # 🧩 Warehouse Source Mapping (Lake → Warehouse)
 # ==============================================
 WAREHOUSE_SOURCE_MAP = {
-    "exchange": ["exchange_list", "exchange_holiday"],
+    "exchange": ["exchange_list", "exchange_detail"],
     "asset_master": ["symbol_list", "exchange_list"],
     "price": ["prices", "splits", "dividends"],
     "fundamental": ["fundamentals", "corporate_actions"],

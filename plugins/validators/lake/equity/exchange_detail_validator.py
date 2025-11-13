@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 
 
-class ExchangeHolidayValidator(BaseDataValidator):
+class ExchangeDetailValidator(BaseDataValidator):
     """
-    📅 Exchange Holiday Validator
+    📅 Exchange Detail Validator
     - DataPathResolver 기반 in/out 경로 자동화
     - nested dict 필드(JSON 직렬화) 처리
     """
@@ -24,8 +24,8 @@ class ExchangeHolidayValidator(BaseDataValidator):
     ):
         """
         Data Lake 구조 예시:
-        /opt/airflow/data/data_lake/raw/equity/exchange_holiday/
-            vendor=eodhd/exchange_code=US/trd_dt=2025-11-11/exchange_holiday.jsonl
+        /opt/airflow/data/data_lake/raw/equity/exchange_detail/
+            vendor=eodhd/exchange_code=US/trd_dt=2025-11-11/exchange_detail.jsonl
         """
         self.allow_empty = allow_empty
         self.vendor = vendor.lower()

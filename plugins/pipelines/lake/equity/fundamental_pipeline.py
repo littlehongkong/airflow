@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from plugins.hooks.eodhd_hook import EODHDHook
 from plugins.pipelines.base_equity_pipeline import BaseEquityPipeline
-from plugins.config.constants import DOMAIN_GROUPS
 from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
 from plugins.utils.loaders.lake.symbol_loader import load_symbol_list
 from plugins.config import constants as C
@@ -18,8 +17,8 @@ class FundamentalPipeline(BaseEquityPipeline):
     ✅ 구조: /exchange_code=KR/snapshot_dt=YYYY-MM-DD/{symbol}.json
     """
 
-    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str = None):
-        super().__init__(domain, exchange_code, trd_dt, domain_group=domain_group)
+    def __init__(self, domain: str, exchange_code: str, trd_dt: str, domain_group: str = None, allow_empty: bool = False):
+        super().__init__(domain, exchange_code, trd_dt, domain_group=domain_group, allow_empty=allow_empty)
         self.hook = EODHDHook()
 
 

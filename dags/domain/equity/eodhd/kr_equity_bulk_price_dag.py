@@ -52,7 +52,6 @@ with DAG(
                 "exchange_code": "{{ params.exchange_code }}",
                 "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": "{{ params.domain }}",
-                "allow_empty": True,
                 "vendor": C.VENDORS["eodhd"],
                 "domain_group": C.DOMAIN_GROUPS["equity"]
             },
@@ -82,10 +81,11 @@ with DAG(
         task_id=f"{exchange_code}_trigger_price_warehouse",
         trigger_dag_id="price_warehouse_dag",
         conf={
-            "country_code": "KOR",  # 🇰🇷 or "US", "JP" 등 다른 국가 가능
+            "country_code": "KOR",
             "trd_dt": "{{ data_interval_end | ds }}",
             "triggered_by": "{{ dag.dag_id }}",
-            "vendor": VENDORS['eodhd']
+            "vendor": VENDORS['eodhd'],
+            "domain_group": C.DOMAIN_GROUPS['equity']
         },
         wait_for_completion=False,
         poke_interval=30,

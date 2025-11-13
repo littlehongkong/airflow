@@ -1,0 +1,103 @@
+# ===================================================
+# 🧩 Warehouse Soda Checks — Holiday Master
+# ===================================================
+
+checks for holiday_master:
+
+  # ---------------------------------------------------
+  # 기본 row 존재 검증 (국가별로 0개 가능)
+  # ---------------------------------------------------
+  - row_count >= 0
+
+  # ---------------------------------------------------
+  # 필수 컬럼 NULL 비율 검증
+  # ---------------------------------------------------
+  - missing_percent(exchange_code) = 0
+  - missing_percent(country_code) = 0
+  - missing_percent(holiday_date) = 0
+  - missing_percent(snapshot_date) = 0
+  - missing_percent(source_vendor) = 0
+  - missing_percent(created_at) = 0
+
+  # ---------------------------------------------------
+  # Exchange Code 형식
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_exchange_code_format
+      fail condition: |
+        exchange_code IS NULL
+        OR exchange_code = ''
+        OR NOT REGEXP_MATCHES(exchange_code, '^[A-Z0-9._-]{1,10}$')
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # Country Code 형식
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_country_code_format
+      fail condition: |
+        country_code IS NULL
+        OR country_code = ''
+        OR NOT REGEXP_MATCHES(country_code, '^[A-Z]{2,3}$')
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # Holiday Date 형식
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_holiday_date_format
+      fail condition: |
+        holiday_date IS NULL
+        OR NOT REGEXP_MATCHES(CAST(holiday_date AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # Holiday Name → holiday_date required
+  # ---------------------------------------------------
+  - failed rows:
+      name: holiday_name_without_date
+      fail condition: |
+        holiday_name IS NOT NULL
+        AND holiday_name != ''
+        AND holiday_date IS NULL
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # holiday_type 형식
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_holiday_type_format
+      fail condition: |
+        holiday_type IS NOT NULL
+        AND holiday_type != ''
+        AND NOT REGEXP_MATCHES(holiday_type, '^[A-Za-z0-9 _-]+$')
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # snapshot_date 검증
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_snapshot_date_format
+      fail condition: |
+        snapshot_date IS NULL
+        OR NOT REGEXP_MATCHES(CAST(snapshot_date AS VARCHAR), '^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # source_vendor 빈 값 금지
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_source_vendor
+      fail condition: |
+        source_vendor IS NULL
+        OR source_vendor = ''
+      samples limit: 5
+
+  # ---------------------------------------------------
+  # created_at NULL 금지
+  # ---------------------------------------------------
+  - failed rows:
+      name: invalid_created_at
+      fail condition: |
+        created_at IS NULL
+      samples limit: 5

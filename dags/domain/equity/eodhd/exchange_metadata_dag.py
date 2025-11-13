@@ -9,10 +9,10 @@ from airflow.task.trigger_rule import TriggerRule
 from plugins.config.constants import DOMAIN_GROUPS, VENDORS
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.symbol_list_pipeline import SymbolListPipeline
-from plugins.pipelines.lake.equity.exchange_holiday_pipeline import ExchangeHolidayPipeline
+from plugins.pipelines.lake.equity.exchange_detail_pipeline import ExchangeDetailPipeline
 from plugins.config import constants as C
 from plugins.validators.lake_data_validator import LakeDataValidator
-from plugins.validators.lake.equity.exchange_holiday_validator import ExchangeHolidayValidator
+from plugins.validators.lake.equity.exchange_detail_validator import ExchangeDetailValidator
 import json
 
 
@@ -48,6 +48,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
                 "domain": C.DATA_DOMAINS["symbol_list"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "trd_dt": "{{ data_interval_end | ds }}",
+                "allow_empty": False,
             },
             dag=dag,
         )
@@ -61,7 +62,6 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
                 "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": C.DATA_DOMAINS["symbol_list"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "allow_empty": False,
                 "vendor": C.VENDORS["eodhd"],
             },
             dag=dag,
@@ -74,32 +74,33 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
 
 
 # ✅ 휴장일 수집 태스크 생성
-def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
-    holiday_tasks = {}
-    print(f"🏖️ [{country_code}] 휴장일 수집 대상: {len(exchanges)}개 → {exchanges}")
+def _build_exchange_detail_tasks_for_country(dag, country_code: str, exchanges: list):
+    detail_tasks = {}
+    print(f"🏖️ [{country_code}] 상세정보 수집 대상: {len(exchanges)}개 → {exchanges}")
 
     for exchange_code in exchanges:
         fetch_task = LakeOperator(
-            task_id=f"{country_code}_{exchange_code}_fetch_exchange_holiday",
-            pipeline_cls=ExchangeHolidayPipeline,
+            task_id=f"{country_code}_{exchange_code}_fetch_exchange_detail",
+            pipeline_cls=ExchangeDetailPipeline,
             method_name="fetch_and_load",
             op_kwargs={
                 "exchange_code": exchange_code,
-                "domain": C.DATA_DOMAINS["exchange_holiday"],
+                "domain": C.DATA_DOMAINS["exchange_detail"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "trd_dt": "{{ data_interval_end | ds }}",
+                "allow_empty": True,
             },
             dag=dag,
         )
 
         validate_task = LakeOperator(
-            task_id=f"{country_code}_{exchange_code}_validate_exchange_holiday",
-            pipeline_cls=ExchangeHolidayValidator,
+            task_id=f"{country_code}_{exchange_code}_validate_exchange_detail",
+            pipeline_cls=ExchangeDetailValidator,
             method_name="validate",
             op_kwargs={
                 "exchange_code": exchange_code,
                 "trd_dt": "{{ data_interval_end | ds }}",
-                "domain": C.DATA_DOMAINS["exchange_holiday"],
+                "domain": C.DATA_DOMAINS["exchange_detail"],
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "vendor": C.VENDORS["eodhd"],
             },
@@ -107,9 +108,9 @@ def _build_holiday_tasks_for_country(dag, country_code: str, exchanges: list):
         )
 
         fetch_task >> validate_task
-        holiday_tasks[exchange_code] = validate_task
+        detail_tasks[exchange_code] = validate_task
 
-    return holiday_tasks
+    return detail_tasks
 
 
 # =========================================================
@@ -122,12 +123,12 @@ with DAG(
         schedule="0 19 * * 1-5",  # 평일 KST 04시
         catchup=False,
         max_active_runs=1,
-        tags=["EODHD", "metadata", "exchange", "holiday"],
+        tags=["EODHD", "metadata", "exchange detail", "holiday"],
 ) as dag:
     start_task = EmptyOperator(task_id="start_pipeline")
     end_task = EmptyOperator(task_id="end_pipeline")
 
-    # ✅ 1️⃣ 국가-거래소 매핑 로드
+    # ✅ 1️⃣ 국가-거래소 매핑 로드 (기존 동일)
     try:
         country_exchange_map = _load_country_exchange_map_from_warehouse()
     except FileNotFoundError:
@@ -139,36 +140,62 @@ with DAG(
 
     all_symbol_tasks = {}
 
-    # ✅ 2️⃣ 국가별 태스크 그룹 생성
+    # ✅ 2️⃣ 국가별 심볼 수집
     for country, exchanges in filtered_map.items():
         symbol_tasks = _build_symbol_tasks_for_country(dag, country, exchanges)
         all_symbol_tasks[country] = symbol_tasks
 
+        # 심볼 검증 완료 후 → asset_master 빌드 트리거
         with TaskGroup(group_id=f"group_trigger_master_{country}", dag=dag):
-            trigger_master = TriggerDagRunOperator(
+            trigger_asset_master = TriggerDagRunOperator(
                 task_id=f"trigger_asset_master_{country}",
                 trigger_dag_id="asset_master_dag",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
-                conf={"trigger_source": "symbol_list_validation", "country_code": country, "domain_group": DOMAIN_GROUPS['equity'], "trd_dt": "{{ data_interval_end | ds }}", "vendor": VENDORS['eodhd']},
+                conf={
+                    "trigger_source": "symbol_list_validation",
+                    "country_code": country,
+                    "domain_group": DOMAIN_GROUPS['equity'],
+                    "trd_dt": "{{ data_interval_end | ds }}",
+                    "vendor": VENDORS['eodhd'],
+                },
                 reset_dag_run=True,
                 wait_for_completion=False,
                 dag=dag,
             )
 
             for val_task in symbol_tasks.values():
-                val_task >> trigger_master
+                val_task >> trigger_asset_master
 
-                # ✅ 3️⃣ 휴장일 수집 (국가별 병렬 수행)
+    # ✅ 3️⃣ 휴장일 수집 (기존 동일)
+    all_exchange_detail_tasks = {}
     for country, exchanges in filtered_map.items():
-        holiday_tasks = _build_holiday_tasks_for_country(dag, country, exchanges)
+        exchange_detail_tasks = _build_exchange_detail_tasks_for_country(dag, country, exchanges)
+        all_exchange_detail_tasks[country] = exchange_detail_tasks
 
-        # 휴장일은 해당 국가의 모든 심볼 검증 이후에 실행
         for val_task in all_symbol_tasks.get(country, {}).values():
-            for h_val in holiday_tasks.values():
+            for h_val in exchange_detail_tasks.values():
                 val_task >> h_val
 
-                # 모든 holiday 검증이 끝나면 종료 태스크로 연결
-        for h_val in holiday_tasks.values():
-            h_val >> end_task
+    # ✅ 4️⃣ 모든 국가의 exchange_detail 검증 완료 후 → Warehouse DAG 트리거
+    trigger_exchange_warehouse = TriggerDagRunOperator(
+        task_id="trigger_exchange_warehouse_dag",
+        trigger_dag_id="build_exchange_warehouse_dag",
+        trigger_rule=TriggerRule.ALL_SUCCESS,
+        conf={
+            "trigger_source": "exchange_detail_validation",
+            "domain_group": DOMAIN_GROUPS['equity'],
+            "trd_dt": "{{ data_interval_end | ds }}",
+            "vendor": VENDORS['eodhd'],
+        },
+        reset_dag_run=True,
+        wait_for_completion=False,
+        dag=dag,
+    )
 
+    # ✅ 모든 exchange_detail 검증이 끝나면 Warehouse 트리거
+    for country, tasks in all_exchange_detail_tasks.items():
+        for h_val in tasks.values():
+            h_val >> trigger_exchange_warehouse
+
+    trigger_exchange_warehouse >> end_task
     start_task >> [v for c in all_symbol_tasks.values() for v in c.values()]

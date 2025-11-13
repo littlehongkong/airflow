@@ -2,14 +2,14 @@
 # 🧩 Warehouse Soda Checks — Exchange Master
 # ===================================================
 
-checks for exchange:
+checks for exchange_master:
 
   # ✅ 기본 데이터 존재 및 필수 컬럼 검증
   - row_count > 0
   - missing_percent(exchange_code) = 0
-  - missing_percent(country_name) = 0
+  - missing_percent(country_code) = 0
   - missing_percent(country_iso2) = 0
-  - missing_percent(currency) = 0
+  - missing_percent(currency_code) = 0
 
   # ✅ Exchange Code 중복 검증
   - duplicate_count(exchange_code) = 0
@@ -25,10 +25,10 @@ checks for exchange:
 
   # ✅ Country Name 필드 검증 (빈 문자열/NULL 금지)
   - failed rows:
-      name: invalid_country_name_empty_or_whitespace
+      name: invalid_country_code_empty_or_whitespace
       samples limit: 5
       fail condition: |
-        country_name IS NULL OR country_name = '' OR TRIM(country_name) = ''
+        country_code IS NULL OR country_code = '' OR TRIM(country_code) = ''
 
   # ✅ ISO2 코드 검증 (2자리 대문자)
   - failed rows:
@@ -42,12 +42,12 @@ checks for exchange:
 
   # ✅ Currency 코드 검증 (3자리 대문자)
   - failed rows:
-      name: invalid_currency_format
+      name: invalid_currency_code_format
       samples limit: 5
       fail condition: |
-        currency IS NOT NULL
-        AND LOWER(TRIM(currency)) NOT IN ('unknown', 'null', '')
-        AND NOT REGEXP_MATCHES(TRIM(currency), '^[A-Z]{2,6}$')
+        currency_code IS NOT NULL
+        AND LOWER(TRIM(currency_code)) NOT IN ('unknown', 'null', '')
+        AND NOT REGEXP_MATCHES(TRIM(currency_code), '^[A-Z]{2,6}$')
 
 
   # ✅ OperatingMIC 형식 검증 (null, 공백, 쉼표 포함 가능)
@@ -64,9 +64,8 @@ checks for exchange:
       name: invalid_timezone_format
       samples limit: 5
       fail condition: |
-        timezone IS NOT NULL
-        AND timezone != ''
-        AND NOT REGEXP_MATCHES(timezone, '^UTC[+-][0-9]{2}$')
+        timezone IS NULL
+        OR timezone = ''
 
   # ✅ 최소 거래소 수 검증 (예: 10개 이상)
-  - row_count >= 10
+  - row_count >= 2

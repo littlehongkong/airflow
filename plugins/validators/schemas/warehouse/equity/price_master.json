@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "dataset": "prices",
+  "dataset": "price_master",
   "description": "일자별 종목별 핵심 시세 스냅샷 (asset_master 연계형)",
   "columns": [
     {

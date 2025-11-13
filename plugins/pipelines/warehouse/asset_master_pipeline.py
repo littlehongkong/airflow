@@ -8,7 +8,6 @@ import hashlib
 from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePipeline
 from plugins.utils.duckdb_manager import DuckDBManager
 from plugins.config.constants import (
-    WAREHOUSE_DOMAINS,
     EXCLUDED_EXCHANGES_BY_COUNTRY,
     VENDORS,
     DATA_WAREHOUSE_ROOT,
@@ -19,7 +18,7 @@ from plugins.utils.transform_utils import normalize_columns, safe_merge
 # ✅ loader import
 from plugins.utils.loaders.lake.symbol_loader import load_symbol_list
 from plugins.utils.loaders.lake.fundamentals_loader import load_fundamentals_latest
-from plugins.utils.loaders.lake.exchange_holiday_loader import load_exchange_holiday_list
+from plugins.utils.loaders.lake.exchange_detail_loader import load_exchange_detail_list
 from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
 
 
@@ -321,14 +320,6 @@ class AssetMasterPipeline(BaseWarehousePipeline):
 
         merged = merged.drop_duplicates(subset=["ticker", "exchange_code"])
 
-        # ✅ 메타 컬럼
-        merged["last_symbol_update"] = self.trd_dt
-        merged["snapshot_date"] = self.trd_dt
-        merged["source_vendor"] = VENDORS.get("eodhd", "eodhd")
-        ts = datetime.now(timezone.utc)
-        merged["created_at"] = ts
-        # merged["updated_at"] = ts
-
         # ✅ 이전 스냅샷 기반 security_id 재사용 + 이벤트 기록
         prev_master = self._load_prev_asset_master()
         merged = self._assign_security_id_and_events(merged, prev_master)
@@ -357,7 +348,7 @@ class AssetMasterPipeline(BaseWarehousePipeline):
 
         exchange_frames = []
         for exchange_code in exchanges:
-            df = load_exchange_holiday_list(
+            df = load_exchange_detail_list(
                 domain_group=self.domain_group,
                 vendor=self.vendor,
                 trd_dt=self.trd_dt,
