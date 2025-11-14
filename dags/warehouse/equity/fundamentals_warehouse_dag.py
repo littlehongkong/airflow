@@ -11,16 +11,14 @@ Airflow DAG: Fundamentals Warehouse Build & Validation
 from airflow import DAG
 from datetime import datetime
 from airflow.providers.standard.operators.empty import EmptyOperator
-from pathlib import Path
 
 from plugins.operators.warehouse_operator import WarehouseOperator
 from plugins.pipelines.warehouse.fundamentals_ticker_split_pipeline import FundamentalsTickerSplitPipeline
 from plugins.validators.warehouse.fundamentals_warehouse_validator import FundamentalsWarehouseValidator
-from plugins.config.constants import DATA_WAREHOUSE_ROOT, DOMAIN_GROUPS, VENDORS
 
 
 with DAG(
-    dag_id="fundamentals_warehouse_dag",
+    dag_id="build_fundamentals_dag",
     start_date=datetime(2025, 10, 1),
     schedule=None,  # 수동/Trigger 기반
     catchup=False,
