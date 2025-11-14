@@ -19,7 +19,7 @@ from plugins.config import constants as C
 # ==========================================================
 
 with DAG(
-    dag_id="price_warehouse_dag",
+    dag_id="build_price_dag",
     description="Lake → Warehouse: 일자별 가격 데이터 적재 및 검증 (국가 단위)",
     start_date=datetime(2025, 10, 1),
     schedule=None,  # ✅ 수동 or TriggerDagRunOperator 호출

@@ -9,7 +9,7 @@ from plugins.validators.warehouse_data_validator import WarehouseDataValidator
 
 
 with DAG(
-    dag_id="asset_master_dag",
+    dag_id="build_asset_master_dag",
     start_date=datetime(2025, 10, 1),
     schedule=None,
     catchup=False,
