@@ -149,7 +149,7 @@ with DAG(
         with TaskGroup(group_id=f"group_trigger_master_{country}", dag=dag):
             trigger_asset_master = TriggerDagRunOperator(
                 task_id=f"trigger_asset_master_{country}",
-                trigger_dag_id="asset_master_dag",
+                trigger_dag_id="build_asset_master_dag",
                 trigger_rule=TriggerRule.ALL_SUCCESS,
                 conf={
                     "trigger_source": "symbol_list_validation",

@@ -43,7 +43,7 @@ with DAG(
     # -------------------------------------------------------------------------
     trigger_exchange_warehouse = TriggerDagRunOperator(
         task_id="trigger_exchange_warehouse",
-        trigger_dag_id="exchange_master_dag",
+        trigger_dag_id="build_exchange_master_dag",
         conf={
             "exchange_code": "ALL",
             "trd_dt": "{{ data_interval_end | ds }}",
