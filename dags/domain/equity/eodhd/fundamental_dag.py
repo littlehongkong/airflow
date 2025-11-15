@@ -79,7 +79,7 @@ with DAG(
 
         trigger_warehouse = TriggerDagRunOperator(
             task_id=f"trigger_fundamentals_warehouse_{exchange_code}",
-            trigger_dag_id="fundamentals_warehouse_dag",
+            trigger_dag_id="build_fundamentals_dag",
             conf={
                 "trigger_source": "fundamental_validation",
                 "exchange_code": exchange_code,

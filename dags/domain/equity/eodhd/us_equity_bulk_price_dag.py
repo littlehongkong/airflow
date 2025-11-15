@@ -66,7 +66,7 @@ with DAG(
 
     trigger_price_warehouse = TriggerDagRunOperator(
         task_id=f"{EXCHANGE_CODE}_trigger_price_warehouse",
-        trigger_dag_id="price_warehouse_dag",
+        trigger_dag_id="build_price_dag",
         conf={
             "country_code": "USA",  # 🇰🇷 or "US", "JP" 등 다른 국가 가능
             "trd_dt": "{{ data_interval_end | ds }}",
