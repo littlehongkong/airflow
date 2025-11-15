@@ -35,7 +35,8 @@ with DAG(
                 "exchange_code": "{{ params.exchange_code }}",
                 "trd_dt": "{{ data_interval_end | ds }}",
                 "domain": "{{ params.domain }}",
-                "domain_group": C.DOMAIN_GROUPS["equity"]
+                "domain_group": C.DOMAIN_GROUPS["equity"],
+                "allow_empty": True
             },
             params={
                 "exchange_code": exchange_code,
