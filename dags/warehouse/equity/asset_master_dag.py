@@ -2,7 +2,6 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.providers.standard.operators.empty import EmptyOperator
-from pathlib import Path
 from plugins.operators.warehouse_operator import WarehouseOperator
 from plugins.pipelines.warehouse.asset_master_pipeline import AssetMasterPipeline
 from plugins.validators.warehouse_data_validator import WarehouseDataValidator

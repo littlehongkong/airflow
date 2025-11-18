@@ -9,6 +9,8 @@ DEFAULT_LOCAL_ROOT = Path(os.getenv("DATA_ROOT_PATH", "/opt/airflow/data"))
 # ✅ 레이어별 데이터 루트
 DATA_LAKE_ROOT       = DEFAULT_LOCAL_ROOT / "data_lake"
 DATA_WAREHOUSE_ROOT  = DEFAULT_LOCAL_ROOT / "data_warehouse"
+DATA_MONITORING_ROOT = DEFAULT_LOCAL_ROOT / "data_monitoring"
+
 # DATA_MART_ROOT       = DEFAULT_LOCAL_ROOT / "data_mart"
 
 # ===========================================================

@@ -93,7 +93,7 @@ class PriceWarehousePipeline(BaseWarehousePipeline):
             "low",
             "close",
             "volume",
-            "market_cap",
+            # "market_cap",
         ]
         existing_cols = [c for c in required_cols if c in df.columns]
         df = df[existing_cols]
