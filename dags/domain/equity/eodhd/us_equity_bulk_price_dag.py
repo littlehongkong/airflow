@@ -12,7 +12,7 @@ EXCHANGE_CODE = "US"
 with DAG(
     dag_id="us_equity_price_pipeline",
     start_date=datetime(2025, 10, 14),
-    schedule="0 23 * * *",  # 매일 새벽 3시 (수집)
+    schedule="0 23 * * 1-5",  # 매일 새벽 3시 (수집)
     catchup=False,
     tags=["EODHD", "Price", "Soda"],
 ) as dag:

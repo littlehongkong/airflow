@@ -6,14 +6,20 @@ from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOpe
 from airflow.sdk import TaskGroup
 from airflow.task.trigger_rule import TriggerRule
 
+from plugins.pipelines.events.new_listing.candidate_extractor_pipeline import (
+    NewListingCandidateExtractorPipeline,
+)
 from plugins.config.constants import DOMAIN_GROUPS, VENDORS
 from plugins.operators.lake_operator import LakeOperator
+from plugins.operators.event_operator import EventOperator
 from plugins.pipelines.lake.equity.symbol_list_pipeline import SymbolListPipeline
 from plugins.pipelines.lake.equity.exchange_detail_pipeline import ExchangeDetailPipeline
 from plugins.config import constants as C
 from plugins.validators.lake_data_validator import LakeDataValidator
 from plugins.validators.lake.equity.exchange_detail_validator import ExchangeDetailValidator
 import json
+
+all_fetch_tasks = []
 
 
 # ✅ Warehouse에서 국가-거래소 매핑 읽기
@@ -67,8 +73,25 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             dag=dag,
         )
 
-        fetch_task >> validate_task
-        symbol_tasks[exchange_code] = validate_task
+        extract_candidates = EventOperator(
+            task_id=f"{country_code}_{exchange_code}_extract_new_listing_candidates",
+            pipeline_cls=NewListingCandidateExtractorPipeline,
+            method_name="run",
+            op_kwargs={
+                "exchange_code": exchange_code,
+                "trd_dt": "{{ data_interval_end | ds }}",
+                "domain_group": C.DOMAIN_GROUPS["equity"],
+                "vendor": C.VENDORS["eodhd"],
+                "country_code":country_code
+            },
+            postgres_conn_id="postgres_default",
+            dag=dag,
+        )
+
+        fetch_task >> validate_task >> extract_candidates
+        symbol_tasks[exchange_code] = extract_candidates
+
+        all_fetch_tasks.append(fetch_task)
 
     return symbol_tasks
 
@@ -109,6 +132,8 @@ def _build_exchange_detail_tasks_for_country(dag, country_code: str, exchanges: 
 
         fetch_task >> validate_task
         detail_tasks[exchange_code] = validate_task
+
+        all_fetch_tasks.append(fetch_task)
 
     return detail_tasks
 
@@ -197,5 +222,8 @@ with DAG(
         for h_val in tasks.values():
             h_val >> trigger_exchange_warehouse
 
+    # trigger_exchange_warehouse >> end_task
+    # start_task >> [v for c in all_symbol_tasks.values() for v in c.values()]
+
+    start_task >> all_fetch_tasks
     trigger_exchange_warehouse >> end_task
-    start_task >> [v for c in all_symbol_tasks.values() for v in c.values()]

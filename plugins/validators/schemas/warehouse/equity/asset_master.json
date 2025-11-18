@@ -9,6 +9,7 @@
     {"name": "exchange_code", "type": "string", "description": "거래소 코드 (KRX, NASDAQ 등)", "constraints": {"required": true}},
     {"name": "country_code", "type": "string", "description": "국가 코드 (ISO2)", "constraints": {"required": true, "pattern": "^[A-Z]{2}$"}},
     {"name": "security_type", "type": "string", "description": "주식 유형 (Common Stock, ETF 등)"},
+    {"name": "description", "type": "string", "description": "상품 설명"},
     {"name": "isin", "type": "string", "description": "국제증권식별번호"},
     {"name": "cusip", "type": "string", "description": "미국증권식별번호"},
     {"name": "lei", "type": "string", "description": "법인식별번호"},

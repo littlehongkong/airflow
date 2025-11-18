@@ -97,6 +97,7 @@ class FundamentalDataValidator(BaseDataValidator):
                 "exchange_code": self.exchange_code,
                 "ticker": general_dict.get("Code"),
                 "Name": general_dict.get("Name"),
+                "Description": general_dict.get("Description"),
                 "security_type": general_dict.get("Type"),
                 "Sector": general_dict.get("Sector"),
                 "Industry": general_dict.get("Industry"),
