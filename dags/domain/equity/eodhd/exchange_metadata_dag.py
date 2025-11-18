@@ -14,6 +14,8 @@ from plugins.operators.lake_operator import LakeOperator
 from plugins.operators.event_operator import EventOperator
 from plugins.pipelines.lake.equity.symbol_list_pipeline import SymbolListPipeline
 from plugins.pipelines.lake.equity.exchange_detail_pipeline import ExchangeDetailPipeline
+from plugins.pipelines.lake.equity.symbol_changes_pipeline import SymbolChangePipeline
+
 from plugins.config import constants as C
 from plugins.validators.lake_data_validator import LakeDataValidator
 from plugins.validators.lake.equity.exchange_detail_validator import ExchangeDetailValidator
@@ -22,7 +24,9 @@ import json
 all_fetch_tasks = []
 
 
-# ✅ Warehouse에서 국가-거래소 매핑 읽기
+# =========================================================
+# 📘 Warehouse에서 국가-거래소 매핑 로드
+# =========================================================
 def _load_country_exchange_map_from_warehouse() -> dict:
     wh_root = C.DATA_WAREHOUSE_ROOT / "exchange"
     meta_files = sorted(wh_root.glob("trd_dt=*/_build_meta.json"), reverse=True)
@@ -39,13 +43,19 @@ def _load_country_exchange_map_from_warehouse() -> dict:
     return mapping
 
 
-# ✅ 심볼 수집 태스크 생성
+
+# =========================================================
+# 🧩 심볼 / 심볼 변경 / 신규상장 후보 추출
+# =========================================================
 def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
     symbol_tasks = {}
-    print(f"🌍 [{country_code}] 거래소 수집 대상: {len(exchanges)}개 → {exchanges}")
 
     for exchange_code in exchanges:
-        fetch_task = LakeOperator(
+
+        # ------------------------
+        # 1) 심볼 수집
+        # ------------------------
+        fetch_symbol = LakeOperator(
             task_id=f"{country_code}_{exchange_code}_fetch_symbol_list",
             pipeline_cls=SymbolListPipeline,
             method_name="fetch_and_load",
@@ -59,7 +69,7 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             dag=dag,
         )
 
-        validate_task = LakeOperator(
+        validate_symbol = LakeOperator(
             task_id=f"{country_code}_{exchange_code}_validate_symbol_list",
             pipeline_cls=LakeDataValidator,
             method_name="validate",
@@ -73,6 +83,44 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             dag=dag,
         )
 
+        # ------------------------
+        # ⭐ 미국 거래소만 symbol_changes 실행
+        # ------------------------
+        if country_code == "USA":
+            run_symbol_changes = LakeOperator(
+                task_id=f"{country_code}_{exchange_code}_run_symbol_changes",
+                pipeline_cls=SymbolChangePipeline,
+                method_name="fetch_and_load",
+                op_kwargs={
+                    "exchange_code": exchange_code,
+                    "domain": C.DATA_DOMAINS["symbol_changes"],
+                    "domain_group": C.DOMAIN_GROUPS["equity"],
+                    "trd_dt": "{{ data_interval_end | ds }}",
+                    "allow_empty": True,
+                },
+                dag=dag,
+            )
+
+            validate_symbol_changes = LakeOperator(
+                task_id=f"{country_code}_{exchange_code}_validate_symbol_changes",
+                pipeline_cls=LakeDataValidator,
+                method_name="validate",
+                op_kwargs={
+                    "exchange_code": exchange_code,
+                    "domain": C.DATA_DOMAINS["symbol_changes"],
+                    "domain_group": C.DOMAIN_GROUPS["equity"],
+                    "trd_dt": "{{ data_interval_end | ds }}",
+                    "vendor": C.VENDORS["eodhd"],
+                },
+                dag=dag,
+            )
+        else:
+            run_symbol_changes = EmptyOperator(task_id=f"{country_code}_{exchange_code}_skip_symbol_changes", dag=dag)
+            validate_symbol_changes = EmptyOperator(task_id=f"{country_code}_{exchange_code}_skip_symbol_changes_ok", dag=dag)
+
+        # ------------------------
+        # 3) 신규상장 후보 추출
+        # ------------------------
         extract_candidates = EventOperator(
             task_id=f"{country_code}_{exchange_code}_extract_new_listing_candidates",
             pipeline_cls=NewListingCandidateExtractorPipeline,
@@ -82,24 +130,32 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
                 "trd_dt": "{{ data_interval_end | ds }}",
                 "domain_group": C.DOMAIN_GROUPS["equity"],
                 "vendor": C.VENDORS["eodhd"],
-                "country_code":country_code
+                "country_code": country_code,
             },
             postgres_conn_id="postgres_default",
             dag=dag,
         )
 
-        fetch_task >> validate_task >> extract_candidates
-        symbol_tasks[exchange_code] = extract_candidates
+        # ------------------------
+        # 실행 흐름 구성
+        # ------------------------
+        fetch_symbol >> validate_symbol \
+                     >> run_symbol_changes \
+                     >> validate_symbol_changes \
+                     >> extract_candidates
 
-        all_fetch_tasks.append(fetch_task)
+        symbol_tasks[exchange_code] = extract_candidates
+        all_fetch_tasks.append(fetch_symbol)
 
     return symbol_tasks
 
 
-# ✅ 휴장일 수집 태스크 생성
+
+# =========================================================
+# 휴장일 수집
+# =========================================================
 def _build_exchange_detail_tasks_for_country(dag, country_code: str, exchanges: list):
     detail_tasks = {}
-    print(f"🏖️ [{country_code}] 상세정보 수집 대상: {len(exchanges)}개 → {exchanges}")
 
     for exchange_code in exchanges:
         fetch_task = LakeOperator(
@@ -138,22 +194,24 @@ def _build_exchange_detail_tasks_for_country(dag, country_code: str, exchanges: 
     return detail_tasks
 
 
+
 # =========================================================
 # DAG 정의
 # =========================================================
 with DAG(
-        dag_id="exchange_metadata_dag",
-        description="Collect & validate exchange metadata, then trigger asset_master master build",
-        start_date=datetime(2025, 10, 15),
-        schedule="0 19 * * 1-5",  # 평일 KST 04시
-        catchup=False,
-        max_active_runs=1,
-        tags=["EODHD", "metadata", "exchange detail", "holiday"],
+    dag_id="exchange_metadata_dag",
+    description="Collect & validate symbol_list / symbol_changes / holidays, then trigger exchange warehouse",
+    start_date=datetime(2025, 10, 15),
+    schedule="0 19 * * 1-5",
+    catchup=False,
+    max_active_runs=1,
+    tags=["EODHD", "metadata", "symbol_changes", "listing"],
 ) as dag:
+
     start_task = EmptyOperator(task_id="start_pipeline")
     end_task = EmptyOperator(task_id="end_pipeline")
 
-    # ✅ 1️⃣ 국가-거래소 매핑 로드 (기존 동일)
+    # 국가-거래소 매핑 로드
     try:
         country_exchange_map = _load_country_exchange_map_from_warehouse()
     except FileNotFoundError:
@@ -165,12 +223,11 @@ with DAG(
 
     all_symbol_tasks = {}
 
-    # ✅ 2️⃣ 국가별 심볼 수집
+    # ⭐ SYMBOL → SYMBOL CHANGES → CANDIDATES
     for country, exchanges in filtered_map.items():
         symbol_tasks = _build_symbol_tasks_for_country(dag, country, exchanges)
         all_symbol_tasks[country] = symbol_tasks
 
-        # 심볼 검증 완료 후 → asset_master 빌드 트리거
         with TaskGroup(group_id=f"group_trigger_master_{country}", dag=dag):
             trigger_asset_master = TriggerDagRunOperator(
                 task_id=f"trigger_asset_master_{country}",
@@ -188,20 +245,22 @@ with DAG(
                 dag=dag,
             )
 
-            for val_task in symbol_tasks.values():
-                val_task >> trigger_asset_master
+            for t in symbol_tasks.values():
+                t >> trigger_asset_master
 
-    # ✅ 3️⃣ 휴장일 수집 (기존 동일)
+
+    # ⭐ HOLIDAYS
     all_exchange_detail_tasks = {}
     for country, exchanges in filtered_map.items():
-        exchange_detail_tasks = _build_exchange_detail_tasks_for_country(dag, country, exchanges)
-        all_exchange_detail_tasks[country] = exchange_detail_tasks
+        detail_tasks = _build_exchange_detail_tasks_for_country(dag, country, exchanges)
+        all_exchange_detail_tasks[country] = detail_tasks
 
-        for val_task in all_symbol_tasks.get(country, {}).values():
-            for h_val in exchange_detail_tasks.values():
-                val_task >> h_val
+        for sym in all_symbol_tasks.get(country, {}).values():
+            for d in detail_tasks.values():
+                sym >> d
 
-    # ✅ 4️⃣ 모든 국가의 exchange_detail 검증 완료 후 → Warehouse DAG 트리거
+
+    # ⭐ Trigger Exchange Warehouse
     trigger_exchange_warehouse = TriggerDagRunOperator(
         task_id="trigger_exchange_warehouse_dag",
         trigger_dag_id="build_exchange_warehouse_dag",
@@ -217,13 +276,9 @@ with DAG(
         dag=dag,
     )
 
-    # ✅ 모든 exchange_detail 검증이 끝나면 Warehouse 트리거
-    for country, tasks in all_exchange_detail_tasks.items():
-        for h_val in tasks.values():
-            h_val >> trigger_exchange_warehouse
-
-    # trigger_exchange_warehouse >> end_task
-    # start_task >> [v for c in all_symbol_tasks.values() for v in c.values()]
+    for country, tlist in all_exchange_detail_tasks.items():
+        for t in tlist.values():
+            t >> trigger_exchange_warehouse
 
     start_task >> all_fetch_tasks
     trigger_exchange_warehouse >> end_task

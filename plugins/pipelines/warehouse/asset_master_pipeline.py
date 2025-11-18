@@ -1,10 +1,8 @@
 import json
 import pandas as pd
-from pathlib import Path
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 import psutil, gc
-import hashlib
 from plugins.pipelines.warehouse.base_warehouse_pipeline import BaseWarehousePipeline
 from plugins.utils.duckdb_manager import DuckDBManager
 from plugins.config.constants import (
@@ -12,7 +10,7 @@ from plugins.config.constants import (
     VENDORS,
     DATA_WAREHOUSE_ROOT,
 )
-from plugins.utils.id_generator import _load_id_map, _save_id_map, _b32
+from plugins.utils.id_generator import _load_id_map, _save_id_map, _b32, generate_or_reuse_entity_id
 from plugins.utils.transform_utils import normalize_columns, safe_merge
 
 # ✅ loader import
@@ -20,6 +18,9 @@ from plugins.utils.loaders.lake.symbol_loader import load_symbol_list
 from plugins.utils.loaders.lake.fundamentals_loader import load_fundamentals_latest
 from plugins.utils.loaders.lake.exchange_detail_loader import load_exchange_detail_list
 from plugins.utils.loaders.lake.exchange_loader import load_exchange_list
+from plugins.utils.loaders.lake.symbol_change import load_symbol_change_list
+
+from plugins.utils.loaders.warehouse.asset_master_loader import load_asset_master
 
 
 class AssetMasterPipeline(BaseWarehousePipeline):
@@ -65,51 +66,6 @@ class AssetMasterPipeline(BaseWarehousePipeline):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         self.log.info(f"🧩 Event logged: {event_type} | {data.get('count', '-') } items")
 
-    def _find_prev_snapshot_dir(self) -> Optional[Path]:
-        """
-        현재 trd_dt 이전의 최신 스냅샷 디렉토리 찾기
-        /data_warehouse/snapshot/equity/asset/trd_dt=YYYY-MM-DD
-        """
-        root = DATA_WAREHOUSE_ROOT / "snapshot" / self.domain_group / "asset"
-        if not root.exists():
-            return None
-        target_dt = pd.to_datetime(self.trd_dt)
-        candidates = []
-        for p in root.glob("trd_dt=*"):
-            try:
-                dt = pd.to_datetime(p.name.split("=")[1])
-                if dt < target_dt:
-                    candidates.append((dt, p))
-            except Exception:
-                continue
-        if not candidates:
-            return None
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        return candidates[0][1]
-
-    def _load_prev_asset_master(self) -> Optional[pd.DataFrame]:
-        """
-        이전 스냅샷의 asset 마스터를 로드 (동일 country 파티션만)
-        """
-        prev_dir = self._find_prev_snapshot_dir()
-        if not prev_dir:
-            return None
-        # 국가 파티셔닝 디렉토리
-        part_dir = prev_dir / f"country_code={self.country_code}"
-        file_path = part_dir / "asset.parquet"
-        if not file_path.exists():
-            # 혹시 국가 파티션 도입 전 파일일 수 있으므로 루트도 시도
-            file_path = prev_dir / "asset.parquet"
-            if not file_path.exists():
-                return None
-        try:
-            df = pd.read_parquet(file_path)
-            # 최소 필요 컬럼만 유지(없으면 그냥 둠)
-            keep = [c for c in ("ticker", "exchange_code", "security_id", "isin", "cusip", "lei") if c in df.columns]
-            return df[keep].drop_duplicates() if keep else df
-        except Exception as e:
-            self.log.warning(f"⚠️ Failed to load previous asset master: {e}")
-            return None
 
     # ============================================================
     # 📘 1️⃣ 거래소 매핑 로드
@@ -193,115 +149,120 @@ class AssetMasterPipeline(BaseWarehousePipeline):
     # ============================================================
     # 📘 5️⃣ 병합 및 변환 로직 (security_id/이벤트 포함)
     # ============================================================
-    def _assign_security_id_and_events(self, merged: pd.DataFrame, prev_master: Optional[pd.DataFrame]) -> pd.DataFrame:
-        """
-        이전 스냅샷과 비교하여 security_id 재사용, 신규 상장/심볼변경 이벤트 감지
-        - generate_or_reuse_entity_id() 대신 벡터화 기반으로 배치 처리
-        """
+    def _assign_security_id_and_events(
+            self,
+            merged: pd.DataFrame,
+            prev_master: Optional[pd.DataFrame],
+            symbol_changes_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+
         df = merged.copy()
+        df["ticker"] = df["ticker"].astype(str).str.upper()
+
+        # ============================================================
+        # 0️⃣ ID Ledger 로드 (old/new → security_id trace)
+        # ============================================================
         id_map = _load_id_map()
-        new_id_map = {}
 
         # ============================================================
-        # 🧩 0️⃣ 이전 스냅샷이 없으면 전량 신규 상장 처리
+        # 1️⃣ 심볼 변경 데이터 정규화
         # ============================================================
-        if prev_master is None or prev_master.empty:
-            seeds = (
-                    df["country_code"].fillna(self.country_code or "UNK").astype(str).str.strip().str.upper() + "|" +
-                    df["exchange_code"].fillna("UNK").astype(str).str.strip().str.upper() + "|" +
-                    df["ticker"].fillna("").astype(str).str.strip().str.upper()
-            )
-            keys = seeds.tolist()
-            ids = []
-            for key in keys:
-                if key in id_map:
-                    ids.append(id_map[key])
-                else:
-                    digest = hashlib.sha1(key.encode("utf-8")).digest()
-                    entity_id = f"AST_{_b32(digest, length=16)}"
-                    ids.append(entity_id)
-                    new_id_map[key] = entity_id
+        change_map = {}  # old → new
+        if symbol_changes_df is not None and not symbol_changes_df.empty:
+            ch = normalize_columns(symbol_changes_df)
+            ch["old_symbol"] = ch["old_symbol"].astype(str).str.upper()
+            ch["new_symbol"] = ch["new_symbol"].astype(str).str.upper()
 
-            df["security_id"] = ids
+            change_map = dict(zip(ch["old_symbol"], ch["new_symbol"]))
 
-            if new_id_map:
-                id_map.update(new_id_map)
-                _save_id_map(id_map)
-
-            self._log_event("NEW_LISTING", {"count": len(df)})
-            return df
+        self.log.info(f"🔄 Loaded symbol_change map: {change_map}")
 
         # ============================================================
-        # 🧩 1️⃣ 기본 세팅
+        # 2️⃣ prev_master normalize (new ticker 기준)
         # ============================================================
-        prev = normalize_columns(prev_master)
+        prev_map = {}
+        if prev_master is not None and not prev_master.empty:
+            prev = normalize_columns(prev_master)
+            prev["ticker"] = prev["ticker"].astype(str).str.upper()
+            prev_map = prev.set_index("ticker")["security_id"].to_dict()
+
+        # ============================================================
+        # 3️⃣ old → new ticker 변경 (today 기준 direct update)
+        # ============================================================
+        df["old_ticker"] = df["ticker"]
+        df["new_ticker"] = df["ticker"].map(change_map)  # old → new
+
+        # ticker 갈아끼우기
+        df.loc[df["new_ticker"].notna(), "ticker"] = df["new_ticker"]
+
+        # 이벤트 기록을 위한 prev_ticker
+        df["prev_ticker_matched"] = df["old_ticker"].where(df["new_ticker"].notna(), pd.NA)
+
+        # ============================================================
+        # 4️⃣ security_id 재사용
+        # ============================================================
         df["security_id"] = pd.NA
-        df["prev_ticker_matched"] = pd.NA
+
+        for idx, row in df.iterrows():
+
+            country = (row["country_code"] or self.country_code or "UNK").upper()
+            exchange = (row["exchange_code"] or "UNK").upper()
+            ticker = row["ticker"]
+
+            key = f"{country}|{exchange}|{ticker}"
+
+            # (1) prev_master[new ticker] 기반
+            if ticker in prev_map:
+                df.at[idx, "security_id"] = prev_map[ticker]
+                continue
+
+            # (2) id ledger 기반
+            if key in id_map:
+                df.at[idx, "security_id"] = id_map[key]
+                continue
+
+            # (3) 신규 생성
+            new_id = generate_or_reuse_entity_id(
+                prefix="AST",
+                country=country,
+                exchange=exchange,
+                ticker=ticker,
+            )
+            df.at[idx, "security_id"] = new_id
+            id_map[key] = new_id
 
         # ============================================================
-        # 🧩 2️⃣ ISIN / CUSIP / LEI 기준 매칭 (ID 재사용)
+        # 5️⃣ SYMBOL_CHANGE 이벤트 기록
         # ============================================================
-        id_keys = [k for k in ["isin", "cusip", "lei"] if k in df.columns and k in prev.columns]
-        for key in id_keys:
-            prev_keyed = prev[[key, "security_id", "ticker"]].dropna(subset=[key]).drop_duplicates(subset=[key])
-            merged_key = df.merge(prev_keyed, on=key, how="left", suffixes=("", "_prev"))
-            df["security_id"].update(merged_key["security_id"])
-            df["prev_ticker_matched"].update(merged_key["ticker_prev"])
+        chg_mask = df["prev_ticker_matched"].notna()
 
-        # ============================================================
-        # 🧩 3️⃣ 심볼 변경 감지
-        # ============================================================
-        chg_mask = df["prev_ticker_matched"].notna() & (
-                df["prev_ticker_matched"].astype(str).str.upper() != df["ticker"].astype(str).str.upper()
-        )
         if chg_mask.any():
-            changed = df.loc[chg_mask, ["prev_ticker_matched", "ticker"]]
+            changes = df.loc[chg_mask, ["prev_ticker_matched", "ticker"]]
             self._log_event(
                 "SYMBOL_CHANGE",
                 {
-                    "count": int(chg_mask.sum()),
-                    "changes": changed.head(100).to_dict(orient="records"),
+                    "count": len(changes),
+                    "changes": changes.to_dict(orient="records"),
                 },
             )
+            self.log.info(f"🔁 SYMBOL_CHANGE applied rows = {len(changes)}")
 
         # ============================================================
-        # 🧩 4️⃣ 신규 상장 (ID가 비어있는 종목 → 벡터화 ID 생성)
+        # 6️⃣ ledger 저장
         # ============================================================
-        new_mask = df["security_id"].isna()
-        if new_mask.any():
-            new_df = df.loc[new_mask]
+        _save_id_map(id_map)
 
-            seeds = (
-                    new_df["country_code"].fillna(self.country_code or "UNK").astype(
-                        str).str.strip().str.upper() + "|" +
-                    new_df["exchange_code"].fillna("UNK").astype(str).str.strip().str.upper() + "|" +
-                    new_df["ticker"].fillna("").astype(str).str.strip().str.upper()
-            )
+        return df.drop(columns=["old_ticker", "new_ticker"], errors="ignore")
 
-            keys = seeds.tolist()
-            ids = []
-            for key in keys:
-                if key in id_map:
-                    ids.append(id_map[key])
-                else:
-                    digest = hashlib.sha1(key.encode("utf-8")).digest()
-                    entity_id = f"AST_{_b32(digest, length=16)}"
-                    ids.append(entity_id)
-                    new_id_map[key] = entity_id
 
-            df.loc[new_mask, "security_id"] = ids
-            self._log_event("NEW_LISTING", {"count": int(new_mask.sum())})
+    def _get_prev_business_day(self) -> str:
+        dt = pd.to_datetime(self.trd_dt)
+        dt -= timedelta(days=1)
+        while dt.weekday() >= 5:  # 5=토, 6=일
+            dt -= timedelta(days=1)
+        return dt.strftime("%Y-%m-%d")
 
-        # ============================================================
-        # 🧩 5️⃣ 신규 매핑 저장
-        # ============================================================
-        if new_id_map:
-            id_map.update(new_id_map)
-            _save_id_map(id_map)
-
-        return df.drop(columns=["prev_ticker_matched"], errors="ignore")
-
-    def _transform_business_logic(self, symbol_list, fundamentals=None, exchange_list=None) -> pd.DataFrame:
+    def _transform_business_logic(self, symbol_list, fundamentals=None, exchange_list=None, symbol_changes_df=None) -> pd.DataFrame:
         """
 
         :param symbol_list:
@@ -320,9 +281,18 @@ class AssetMasterPipeline(BaseWarehousePipeline):
 
         merged = merged.drop_duplicates(subset=["ticker", "exchange_code"])
 
+        prev_dt = self._get_prev_business_day()
+
         # ✅ 이전 스냅샷 기반 security_id 재사용 + 이벤트 기록
-        prev_master = self._load_prev_asset_master()
-        merged = self._assign_security_id_and_events(merged, prev_master)
+        prev_master = load_asset_master(
+            domain_group=self.domain_group,
+            country_code=self.country_code,
+            trd_dt=prev_dt
+        )
+
+        assert not prev_master.empty, f"⚠ prev_master({prev_dt}) snapshot not found or empty"
+
+        merged = self._assign_security_id_and_events(merged, prev_master, symbol_changes_df)
 
         return merged
 
@@ -346,6 +316,13 @@ class AssetMasterPipeline(BaseWarehousePipeline):
             exchange_codes=exchanges,
         )
 
+        symbol_changes_df = load_symbol_change_list(
+            domain_group=self.domain_group,
+            vendor=self.vendor,
+            exchange_code=exchanges[0],
+            trd_dt=self.trd_dt
+        )
+
         exchange_frames = []
         for exchange_code in exchanges:
             df = load_exchange_detail_list(
@@ -361,7 +338,7 @@ class AssetMasterPipeline(BaseWarehousePipeline):
                 exchange_frames.append(df)
 
         exchange_df = pd.concat(exchange_frames, ignore_index=True) if exchange_frames else pd.DataFrame()
-        return {"symbol_list": symbol_df, "fundamentals": fundamentals_df, "exchange_list": exchange_df}
+        return {"symbol_list": symbol_df, "fundamentals": fundamentals_df, "exchange_list": exchange_df, "symbol_changes_list": symbol_changes_df}
 
     # ============================================================
     # 📘 7️⃣ 전체 빌드 실행
@@ -436,7 +413,8 @@ class AssetMasterPipeline(BaseWarehousePipeline):
             final_df = self._transform_business_logic(
                 symbol_list=merged_df,
                 fundamentals=None,
-                exchange_list=None
+                exchange_list=None,
+                symbol_changes_df=sources["symbol_changes_list"]
             )
 
             reorder_df = self._reorder_columns(df=final_df)
