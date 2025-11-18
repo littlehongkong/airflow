@@ -8,7 +8,6 @@ from datetime import datetime
 from plugins.operators.lake_operator import LakeOperator
 from plugins.pipelines.lake.equity.equity_split_pipeline import EquitySplitPipeline
 from plugins.pipelines.lake.equity.equity_dividend_pipeline import EquityDividendPipeline
-from plugins.pipelines.lake.equity.symbol_changes_pipeline import SymbolChangePipeline
 from plugins.config import constants as C
 from plugins.validators.lake_data_validator import LakeDataValidator
 
@@ -100,50 +99,4 @@ with DAG(
         fetch_splits >> validate_splits
         fetch_dividends >> validate_dividends
 
-    # ===========================================================
-    # 🎯 2️⃣ Symbol Changes (미국 전용)
-    # ===========================================================
-    branch = BranchPythonOperator(
-        task_id="check_exchange_for_symbol_changes",
-        python_callable=should_run_symbol_changes,
-    )
-
-    run_symbol_changes = LakeOperator(
-        task_id="run_symbol_changes",
-        pipeline_cls=SymbolChangePipeline,
-        method_name="fetch_and_load",
-        op_kwargs={
-            "exchange_code": exchange_code,
-            "domain": C.DATA_DOMAINS['symbol_changes'],
-            "domain_group": C.DOMAIN_GROUPS["equity"],
-            "trd_dt": trd_dt,
-            "allow_empty": True
-        },
-    )
-
-    validate_symbol_changes = LakeOperator(
-        task_id="validate_symbol_changes",
-        pipeline_cls=LakeDataValidator,
-        method_name="validate",
-        op_kwargs={
-            "exchange_code": exchange_code,
-            "domain": C.DATA_DOMAINS['symbol_changes'],
-            "domain_group": C.DOMAIN_GROUPS["equity"],
-            "trd_dt": trd_dt,
-            "vendor": C.VENDORS["eodhd"]
-        },
-    )
-
-    skip_symbol_changes = EmptyOperator(task_id="skip_symbol_changes")
-
-    # ===========================================================
-    # 🎯 3️⃣ DAG 실행 순서 정의
-    # ===========================================================
-    # 1. 기본 Corporate Actions (Splits/Dividends)
-    tg >> branch
-
-    # 2. 미국 거래소일 경우만 Symbol Change 실행
-    branch >> run_symbol_changes >> validate_symbol_changes
-
-    # 3. 그 외 거래소는 Skip 후 종료
-    branch >> skip_symbol_changes
+    tg
