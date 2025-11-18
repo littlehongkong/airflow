@@ -6,6 +6,7 @@ from plugins.operators.warehouse_operator import WarehouseOperator
 from plugins.operators.event_operator import EventOperator
 from plugins.pipelines.warehouse.asset_master_pipeline import AssetMasterPipeline
 from plugins.pipelines.events.new_listing.candidate_extractor_pipeline import NewListingCandidateExtractorPipeline
+from plugins.pipelines.events.new_listing.fetch_fundamentals_for_candidates import NewListingFundamentalCollector
 from plugins.validators.warehouse_data_validator import WarehouseDataValidator
 
 
@@ -41,6 +42,17 @@ with DAG(
         }
     )
 
+    collect_new_listing_fundamentals = EventOperator(
+        task_id="collect_new_listing_fundamentals",
+        pipeline_cls=NewListingFundamentalCollector,  # Warehouse-level pipeline
+        method_name="run",
+        op_kwargs={
+            "country_code": "{{ dag_run.conf.get('country_code', '') }}",
+            "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
+            "trd_dt": "{{ dag_run.conf.get('trd_dt', '') }}",
+        }
+    )
+
     # 2️⃣ Validation Task (유효성검증 + validated 이관)
     validate_asset_master = WarehouseOperator(
         task_id="validate_asset_master",
@@ -56,4 +68,4 @@ with DAG(
 
     end = EmptyOperator(task_id="end_pipeline")
 
-    start >> build_asset_master >> extract_warehouse_new_listing >> validate_asset_master >> end
+    start >> build_asset_master >> extract_warehouse_new_listing >> collect_new_listing_fundamentals >> validate_asset_master >> end
