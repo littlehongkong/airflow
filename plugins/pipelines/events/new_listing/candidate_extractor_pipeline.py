@@ -6,7 +6,7 @@ import pandas as pd
 import logging
 
 from plugins.utils.path_manager import DataPathResolver
-from plugins.utils.loaders.warehouse.asset_master_loader import load_asset_master_latest
+from plugins.utils.loaders.warehouse.asset_master_loader import load_asset_master
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +36,13 @@ class NewListingCandidateExtractorPipeline:
     def _load_asset_master(self, dt: str) -> pd.DataFrame:
         """Warehouse Asset Master 로드"""
         try:
-            df = load_asset_master_latest(
+
+            df = load_asset_master(
                 country_code=self.country_code,
-                domain_group=self.domain_group
+                domain_group=self.domain_group,
+                trd_dt=dt
             )
+
             assert not df.empty, f"❌ asset_master가 비어있음: {dt}"
             return df
         except Exception as e:

@@ -70,10 +70,51 @@ class DataPathResolver:
           /data_warehouse/monitoring/equity/new_listing/country_code=USA/trd_dt=2025-11-13
         """
         return (
-            C.DATA_WAREHOUSE_ROOT
-            / "monitoring"
+            C.DATA_MONITORING_ROOT
             / domain_group
             / category
             / f"country_code={country_code}"
             / f"trd_dt={trd_dt}"
+        )
+
+    # RAW
+    @staticmethod
+    def lake_raw_fundamentals(domain_group: str, vendor: str, exchange_code: str, trd_dt: str):
+        return (
+            C.DATA_LAKE_ROOT / "raw" / domain_group / "fundamentals"
+            / f"vendor={vendor}"
+            / f"exchange_code={exchange_code}"
+            / f"trd_dt={trd_dt}"
+        )
+
+    # VALIDATED
+    @staticmethod
+    def lake_validated_fundamentals(domain_group: str, vendor: str, exchange_code: str, trd_dt: str):
+        return (
+            C.DATA_LAKE_ROOT / "validated" / domain_group / "fundamentals"
+            / f"vendor={vendor}"
+            / f"exchange_code={exchange_code}"
+            / f"trd_dt={trd_dt}"
+        )
+
+    # VALIDATED (without trd_dt)
+    @staticmethod
+    def lake_validated_fundamentals_root(domain_group: str, vendor: str, exchange_code: str):
+        return (
+            C.DATA_LAKE_ROOT / "validated" / domain_group / "fundamentals"
+            / f"vendor={vendor}"
+            / f"exchange_code={exchange_code}"
+        )
+
+    # LATEST
+    @staticmethod
+    def fundamentals_latest_root(domain_group: str, vendor: str, exchange_code: str):
+        return (
+                C.DATA_LAKE_ROOT
+                / "validated"
+                / domain_group
+                / "fundamentals"
+                / f"vendor={vendor}"
+                / f"exchange_code={exchange_code}"
+                / "latest"
         )
