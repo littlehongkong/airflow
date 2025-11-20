@@ -160,25 +160,24 @@ class AssetMasterPipeline(BaseWarehousePipeline):
         df["ticker"] = df["ticker"].astype(str).str.upper()
 
         # ============================================================
-        # 0️⃣ ID Ledger 로드 (old/new → security_id trace)
+        # 1) symbol_change 정규화 (ticker + name 동시 매핑)
         # ============================================================
-        id_map = _load_id_map()
+        change_map = {}  # old → new ticker
+        name_change_map = {}  # old → new name
 
-        # ============================================================
-        # 1️⃣ 심볼 변경 데이터 정규화
-        # ============================================================
-        change_map = {}  # old → new
         if symbol_changes_df is not None and not symbol_changes_df.empty:
             ch = normalize_columns(symbol_changes_df)
             ch["old_symbol"] = ch["old_symbol"].astype(str).str.upper()
             ch["new_symbol"] = ch["new_symbol"].astype(str).str.upper()
 
             change_map = dict(zip(ch["old_symbol"], ch["new_symbol"]))
+            name_change_map = dict(zip(ch["old_symbol"], ch["company_name"]))  # name 변경
 
-        self.log.info(f"🔄 Loaded symbol_change map: {change_map}")
+        self.log.info(f"🔄 symbol_change map = {change_map}")
+        self.log.info(f"🔄 name_change_map = {name_change_map}")
 
         # ============================================================
-        # 2️⃣ prev_master normalize (new ticker 기준)
+        # 2) prev_master mapping: ticker → security_id
         # ============================================================
         prev_map = {}
         if prev_master is not None and not prev_master.empty:
@@ -187,73 +186,79 @@ class AssetMasterPipeline(BaseWarehousePipeline):
             prev_map = prev.set_index("ticker")["security_id"].to_dict()
 
         # ============================================================
-        # 3️⃣ old → new ticker 변경 (today 기준 direct update)
+        # 3) apply ticker rename (old → new)
         # ============================================================
         df["old_ticker"] = df["ticker"]
-        df["new_ticker"] = df["ticker"].map(change_map)  # old → new
+        df["new_ticker"] = df["old_ticker"].map(change_map)
 
-        # ticker 갈아끼우기
+        # ticker rename 적용
         df.loc[df["new_ticker"].notna(), "ticker"] = df["new_ticker"]
 
-        # 이벤트 기록을 위한 prev_ticker
+        # name 변경까지 반영 (company_name 사용)
+        df.loc[df["new_ticker"].notna(), "name"] = (
+            df["old_ticker"].map(name_change_map)
+        )
+
+        # 변경 여부 저장 (event 용)
         df["prev_ticker_matched"] = df["old_ticker"].where(df["new_ticker"].notna(), pd.NA)
 
         # ============================================================
-        # 4️⃣ security_id 재사용
+        # 4) security_id 승계
         # ============================================================
         df["security_id"] = pd.NA
 
+        # ledger 불러오기
+        id_map = _load_id_map()
+
         for idx, row in df.iterrows():
 
-            country = (row["country_code"] or self.country_code or "UNK").upper()
-            exchange = (row["exchange_code"] or "UNK").upper()
-            ticker = row["ticker"]
+            old_ticker = row["old_ticker"]
+            new_ticker = row["ticker"]
 
-            key = f"{country}|{exchange}|{ticker}"
-
-            # (1) prev_master[new ticker] 기반
-            if ticker in prev_map:
-                df.at[idx, "security_id"] = prev_map[ticker]
+            # ----- (1) prev_master에서 old_ticker 승계 -----
+            if old_ticker in prev_map:
+                sec_id = prev_map[old_ticker]
+                df.at[idx, "security_id"] = sec_id
+                id_map[new_ticker] = sec_id  # ledger에 new 추가
                 continue
 
-            # (2) id ledger 기반
-            if key in id_map:
-                df.at[idx, "security_id"] = id_map[key]
+            # ----- (2) ledger에서 old_ticker 승계 -----
+            if old_ticker in id_map:
+                sec_id = id_map[old_ticker]
+                df.at[idx, "security_id"] = sec_id
+                id_map[new_ticker] = sec_id
                 continue
 
-            # (3) 신규 생성
+            # ----- (3) ledger에서 new_ticker 직접 매칭 -----
+            if new_ticker in id_map:
+                df.at[idx, "security_id"] = id_map[new_ticker]
+                continue
+
+            # ----- (4) 신규 생성 -----
             new_id = generate_or_reuse_entity_id(
                 prefix="AST",
-                country=country,
-                exchange=exchange,
-                ticker=ticker,
+                country=row["country_code"],
+                ticker=new_ticker,
+                exchange=row['exchange_code']
             )
             df.at[idx, "security_id"] = new_id
-            id_map[key] = new_id
+            id_map[new_ticker] = new_id
 
         # ============================================================
-        # 5️⃣ SYMBOL_CHANGE 이벤트 기록
+        # 5) SYMBOL_CHANGE 이벤트 기록
         # ============================================================
-        chg_mask = df["prev_ticker_matched"].notna()
+        changed = df.loc[df["prev_ticker_matched"].notna(), ["prev_ticker_matched", "ticker"]]
 
-        if chg_mask.any():
-            changes = df.loc[chg_mask, ["prev_ticker_matched", "ticker"]]
-            self._log_event(
-                "SYMBOL_CHANGE",
-                {
-                    "count": len(changes),
-                    "changes": changes.to_dict(orient="records"),
-                },
-            )
-            self.log.info(f"🔁 SYMBOL_CHANGE applied rows = {len(changes)}")
+        if not changed.empty:
+            self._log_event("SYMBOL_CHANGE", {
+                "count": len(changed),
+                "changes": changed.to_dict(orient="records"),
+            })
 
-        # ============================================================
-        # 6️⃣ ledger 저장
-        # ============================================================
+        # ledger 저장
         _save_id_map(id_map)
 
         return df.drop(columns=["old_ticker", "new_ticker"], errors="ignore")
-
 
     def _get_prev_business_day(self) -> str:
         dt = pd.to_datetime(self.trd_dt)
