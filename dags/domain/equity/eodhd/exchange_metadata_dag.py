@@ -126,10 +126,10 @@ def _build_symbol_tasks_for_country(dag, country_code: str, exchanges: list):
             pipeline_cls=NewListingCandidateExtractorPipeline,
             method_name="run",
             op_kwargs={
-                "exchange_code": exchange_code,
+                # "exchange_code": exchange_code,
                 "trd_dt": "{{ data_interval_end | ds }}",
                 "domain_group": C.DOMAIN_GROUPS["equity"],
-                "vendor": C.VENDORS["eodhd"],
+                # "vendor": C.VENDORS["eodhd"],
                 "country_code": country_code,
             },
             postgres_conn_id="postgres_default",
