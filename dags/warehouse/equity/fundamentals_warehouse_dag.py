@@ -57,7 +57,6 @@ with DAG(
             "country_code": "{{ dag_run.conf.get('country_code', '') }}",
             "domain_group": "{{ dag_run.conf.get('domain_group', '') }}",
             "vendor": "{{ dag_run.conf.get('vendor', '') }}",
-            # ✅ dataset_path는 trd_dt 단위 snapshot 루트 지정
             "allow_empty": True,
         },
     )
