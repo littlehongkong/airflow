@@ -86,6 +86,13 @@ DOMAIN_GROUPS = {
     "news": "news",
 }
 
+EVENT_CATEGORIES = {
+    "new_listing": "new_listing",
+    "symbol_change": "symbol_change",
+    "split": "split",
+    "delisting": "delisting",
+}
+
 # ===========================================================
 # 🧭 PATH HELPER FUNCTIONS
 # ===========================================================

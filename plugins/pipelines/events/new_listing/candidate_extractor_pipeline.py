@@ -6,7 +6,7 @@ import pandas as pd
 import logging
 
 from plugins.utils.path_manager import DataPathResolver
-from plugins.utils.loaders.warehouse.asset_master_loader import load_asset_master_latest
+from plugins.utils.loaders.warehouse.asset_master_loader import load_asset_master
 
 log = logging.getLogger(__name__)
 
@@ -18,30 +18,26 @@ class NewListingCandidateExtractorPipeline:
     domain_group: str = "equity"
 
     def _get_prev_trading_day(self) -> str:
-        """
-        간단한 이전 거래일 계산
-        - 기준: 주말(토/일)만 휴일로 가정
-        - 필요 시 나중에 country별 휴일 캘린더로 교체
-        """
+        """주말 보정 포함한 전 영업일 계산"""
         current_dt = pd.to_datetime(self.trd_dt)
         prev_dt = current_dt - timedelta(days=1)
 
-        # 토(5), 일(6)이면 평일까지 뒤로 이동
-        while prev_dt.weekday() >= 5:
+        while prev_dt.weekday() >= 5:  # Sat=5, Sun=6
             prev_dt -= timedelta(days=1)
 
         return prev_dt.strftime("%Y-%m-%d")
 
-
     def _load_asset_master(self, dt: str) -> pd.DataFrame:
         """Warehouse Asset Master 로드"""
         try:
-            df = load_asset_master_latest(
+            df = load_asset_master(
                 country_code=self.country_code,
-                domain_group=self.domain_group
+                domain_group=self.domain_group,
+                trd_dt=dt
             )
             assert not df.empty, f"❌ asset_master가 비어있음: {dt}"
             return df
+
         except Exception as e:
             log.error(f"❌ Asset master load 실패: {e}")
             return pd.DataFrame()
@@ -49,53 +45,62 @@ class NewListingCandidateExtractorPipeline:
     def detect_candidates(self):
         """warehouse asset_master 기반 신규 상장 탐지"""
 
-        # 1) 오늘 snapshot
+        # 오늘 기준
         today_df = self._load_asset_master(self.trd_dt)
 
-        # 2) 전일 snapshot (휴일 조정 포함)
+        # 전일 기준
         prev_dt = self._get_prev_trading_day()
         yesterday_df = self._load_asset_master(prev_dt)
 
-        # 3) 신규 security_id = today - yesterday
-        existing_ids = set(yesterday_df["security_id"])
-        today_ids = set(today_df["security_id"])
-
-        new_ids = today_ids - existing_ids
+        # 신규 security_id = today - yesterday
+        new_ids = set(today_df["security_id"]) - set(yesterday_df["security_id"])
         if not new_ids:
-            return []
+            return {}
 
-        # 신규 entries 추출
+        # 신규 entries
         candidates = today_df[today_df["security_id"].isin(new_ids)]
-        return candidates.to_dict(orient="records")
 
-    def _save(self, candidates):
-        """DataPathResolver로 모니터링 경로에 저장"""
+        # 🔥 국가 기준이 아니라 exchange_code 기준 그룹화
+        grouped = {}
+        for _, row in candidates.iterrows():
+            ex = 'US' if row['country_code'] == 'USA' else row["exchange_code"]
+            grouped.setdefault(ex, []).append(row.to_dict())
+
+        return grouped   # { "NASDAQ": [...], "NYSE": [...], ... }
+
+    def _save_group(self, exchange_code: str, rows: list):
+        """exchange_code 단위로 모니터링 경로 저장"""
 
         out_dir = DataPathResolver.warehouse_monitoring(
             domain_group=self.domain_group,
             category="new_listing",
-            country_code=self.country_code,
             trd_dt=self.trd_dt,
+            exchange_code=exchange_code
         )
+
         out_dir.mkdir(parents=True, exist_ok=True)
 
         out_file = out_dir / "candidates.jsonl"
 
         with open(out_file, "w", encoding="utf-8") as f:
-            for row in candidates:
+            for row in rows:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-        log.info(f"📦 신규상장 {len(candidates)}건 저장 → {out_file}")
+        log.info(f"📦 신규상장 {exchange_code}: {len(rows)}건 저장 → {out_file}")
         return str(out_file)
 
     def run(self, context=None, **kwargs):
-        candidates = self.detect_candidates()
-        out_path = self._save(candidates)
+        grouped = self.detect_candidates()
+
+        saved_paths = {}
+        for ex_code, rows in grouped.items():
+            p = self._save_group(ex_code, rows)
+            saved_paths[ex_code] = p
 
         return {
-            "record_count": len(candidates),
-            "validated_path": out_path,
+            "record_count": sum(len(v) for v in grouped.values()),
+            "paths": saved_paths,
             "country_code": self.country_code,
             "trd_dt": self.trd_dt,
-            "candidates": candidates,
+            "grouped_candidates": grouped,
         }
